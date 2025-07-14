@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase types
 import '../ui_constants.dart'; // Import your constants file
+import '../services/supabase_service.dart'; // Import SupabaseService
+import '../widgets/message_modal.dart'; // Import MessageModal
+
+// Helper function to capitalize the first letter of a string
+String capitalizeFirstLetter(String text) {
+  if (text.isEmpty) {
+    return '';
+  }
+  return '${text[0].toUpperCase()}${text.substring(1).toLowerCase()}';
+}
 
 class AdminHomepageScreen extends StatefulWidget {
   const AdminHomepageScreen({super.key});
@@ -11,742 +22,90 @@ class AdminHomepageScreen extends StatefulWidget {
 }
 
 class _AdminHomepageScreenState extends State<AdminHomepageScreen> {
-  String _adminFullName = 'Admin User'; // Placeholder
+  String _adminFullName = 'Admin User'; // Placeholder, will fetch from profile
   int _selectedTabIndex = 0; // 0 for Items, 1 for Users
 
-  // Placeholder data for items and users
-  final List<Map<String, dynamic>> _reportedItems = [
-    {
-      'id': 1,
-      'itemName': 'Lost Phone',
-      'itemType': 'Lost',
-      'reportedBy': 'Alice',
-      'status': 'pending_approval',
-      'dateReported': 'Oct 26, 2023 10:30 AM',
-    },
-    {
-      'id': 2,
-      'itemName': 'Found Wallet',
-      'itemType': 'Found',
-      'reportedBy': 'Bob',
-      'status': 'unclaimed',
-      'dateReported': 'Oct 25, 2023 09:00 AM',
-    },
-    {
-      'id': 3,
-      'itemName': 'Lost Backpack',
-      'itemType': 'Lost',
-      'reportedBy': 'Charlie',
-      'status': 'not_found',
-      'dateReported': 'Oct 24, 2023 02:15 PM',
-    },
-    {
-      'id': 4,
-      'itemName': 'Found Keys',
-      'itemType': 'Found',
-      'reportedBy': 'David',
-      'status': 'claimed',
-      'dateReported': 'Oct 23, 2023 11:45 AM',
-    },
-    {
-      'id': 5,
-      'itemName': 'Lost Laptop',
-      'itemType': 'Lost',
-      'reportedBy': 'Eve',
-      'status': 'rejected',
-      'dateReported': 'Oct 22, 2023 04:00 PM',
-    },
-  ];
-
-  final List<Map<String, dynamic>> _users = [
-    {
-      'id': 101,
-      'fullName': 'Alice Smith',
-      'email': 'alice@example.com',
-      'phone': '111-222-3333',
-      'registered': 'Sep 15, 2023',
-      'userType': 'user',
-    },
-    {
-      'id': 102,
-      'fullName': 'Bob Johnson',
-      'email': 'bob@example.com',
-      'phone': '444-555-6666',
-      'registered': 'Aug 01, 2023',
-      'userType': 'user',
-    },
-    {
-      'id': 103,
-      'fullName': 'Admin User',
-      'email': 'admin@example.com',
-      'phone': '777-888-9999',
-      'registered': 'Jul 10, 2023',
-      'userType': 'admin',
-    },
-  ];
-
-  String _itemSearchQuery = '';
-  String _userSearchQuery = '';
+  List<Map<String, dynamic>> _reportedItems = []; // Combined lost and found items
+  List<Map<String, dynamic>> _users = [];
+  bool _isLoading = true;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA), // Light grey background
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            children: [
-              _buildAdminHeader(),
-              const SizedBox(height: 24),
-              _buildTabButtons(),
-              const SizedBox(height: 24),
-              _selectedTabIndex == 0
-                  ? _buildReportedItemsTab()
-                  : _buildUserManagementTab(),
-            ],
-          ),
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    _fetchAdminData();
   }
 
-  Widget _buildAdminHeader() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: kWhite,
-        borderRadius: kSmallBorderRadius,
-        boxShadow: const [kDefaultBoxShadow],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'Admin Dashboard',
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.w600,
-              color: kBlack,
-            ),
-          ),
-          Row(
-            children: [
-              Icon(FontAwesomeIcons.user, color: kBlack, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                _adminFullName,
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w500,
-                  color: kBlack,
-                ),
-              ),
-              const SizedBox(width: 24),
-              ElevatedButton.icon(
-                onPressed: () => print('Logout'),
-                icon: const Icon(
-                  FontAwesomeIcons.signOutAlt,
-                  size: 18,
-                  color: kWhite,
-                ),
-                label: Text(
-                  'Logout',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w500,
-                    color: kWhite,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF72585), // Danger color
-                  shape: RoundedRectangleBorder(
-                    borderRadius: kSmallBorderRadius,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButtons() {
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: kLightGrey)),
-      ),
-      child: Row(
-        children: [
-          _buildTabButton(0, 'Reported Items', FontAwesomeIcons.box),
-          _buildTabButton(1, 'User Management', FontAwesomeIcons.users),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(int index, String title, IconData icon) {
-    final bool isActive = _selectedTabIndex == index;
-    return TextButton.icon(
-      onPressed: () {
-        setState(() {
-          _selectedTabIndex = index;
-        });
-      },
-      icon: Icon(
-        icon,
-        size: 18,
-        color: isActive ? const Color(0xFF4361EE) : kGrey,
-      ),
-      label: Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontWeight: FontWeight.w500,
-          color: isActive ? const Color(0xFF4361EE) : kGrey,
-        ),
-      ),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        shape: const RoundedRectangleBorder(),
-        side:
-            isActive
-                ? const BorderSide(color: Color(0xFF4361EE), width: 2)
-                : BorderSide.none,
-        alignment: Alignment.center,
-      ),
-    );
-  }
-
-  Widget _buildReportedItemsTab() {
-    final filteredItems =
-        _reportedItems.where((item) {
-          final query = _itemSearchQuery.toLowerCase();
-          return item['itemName'].toLowerCase().contains(query) ||
-              item['description']?.toLowerCase().contains(query) == true ||
-              item['reportedBy'].toLowerCase().contains(query) ||
-              item['status'].toLowerCase().contains(query);
-        }).toList();
-
-    return Column(
-      children: [
-        _buildSearchExportRow(
-          searchController: TextEditingController(text: _itemSearchQuery),
-          onSearchChanged: (query) {
-            setState(() {
-              _itemSearchQuery = query;
-            });
-          },
-          onExport: () => print('Export Items to Excel'),
-        ),
-        const SizedBox(height: 24),
-        _buildCardContainer(
-          title: 'Reported Items',
-          count: filteredItems.length,
-          child: _buildItemsTable(filteredItems),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUserManagementTab() {
-    final filteredUsers =
-        _users.where((user) {
-          final query = _userSearchQuery.toLowerCase();
-          return user['fullName'].toLowerCase().contains(query) ||
-              user['email'].toLowerCase().contains(query) ||
-              user['phone'].toLowerCase().contains(query);
-        }).toList();
-
-    return Column(
-      children: [
-        _buildSearchExportRow(
-          searchController: TextEditingController(text: _userSearchQuery),
-          onSearchChanged: (query) {
-            setState(() {
-              _userSearchQuery = query;
-            });
-          },
-          onExport: () => print('Export Users to Excel'),
-        ),
-        const SizedBox(height: 24),
-        _buildCardContainer(
-          title: 'Registered Users',
-          count: filteredUsers.length,
-          child: _buildUsersTable(filteredUsers),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchExportRow({
-    required TextEditingController searchController,
-    required ValueChanged<String> onSearchChanged,
-    required VoidCallback onExport,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: searchController,
-            onChanged: onSearchChanged,
-            decoration: InputDecoration(
-              hintText: 'Search...',
-              prefixIcon: const Icon(
-                FontAwesomeIcons.search,
-                size: 18,
-                color: kGrey,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: kSmallBorderRadius,
-                borderSide: const BorderSide(color: kLightGrey),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: kSmallBorderRadius,
-                borderSide: const BorderSide(color: kLightGrey),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: kSmallBorderRadius,
-                borderSide: const BorderSide(color: Color(0xFF4361EE)),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        ElevatedButton.icon(
-          onPressed: onExport,
-          icon: const Icon(FontAwesomeIcons.fileExcel, size: 18, color: kWhite),
-          label: Text(
-            'Export',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w500,
-              color: kWhite,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4CC9F0), // Success color
-            shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCardContainer({
-    required String title,
-    required int count,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: kWhite,
-        borderRadius: kSmallBorderRadius,
-        boxShadow: const [kDefaultBoxShadow],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: kBlack,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: kLightGrey,
-                  borderRadius: kCircularBorderRadius,
-                ),
-                child: Text(
-                  '$count items',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: kGrey,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildItemsTable(List<Map<String, dynamic>> items) {
-    if (items.isEmpty) {
-      return _buildEmptyState('No items found');
-    }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columnSpacing: 20,
-        dataRowMinHeight: 50,
-        dataRowMaxHeight: 60,
-        headingRowColor: MaterialStateProperty.all(const Color(0xFFF8F9FA)),
-        headingTextStyle: GoogleFonts.poppins(
-          fontWeight: FontWeight.w500,
-          color: kGrey,
-          fontSize: 14,
-        ),
-        dataTextStyle: GoogleFonts.poppins(color: kBlack, fontSize: 14),
-        columns: const [
-          DataColumn(label: Text('ID')),
-          DataColumn(label: Text('Item Name')),
-          DataColumn(label: Text('Type')),
-          DataColumn(label: Text('Reported By')),
-          DataColumn(label: Text('Status')),
-          DataColumn(label: Text('Date Reported')),
-          DataColumn(label: Text('Actions')),
-        ],
-        rows:
-            items.map((item) {
-              return DataRow(
-                cells: [
-                  DataCell(Text(item['id'].toString())),
-                  DataCell(Text(item['itemName'])),
-                  DataCell(Text(item['itemType'])),
-                  DataCell(Text(item['reportedBy'])),
-                  DataCell(_buildStatusBadge(item['status'], item['itemType'])),
-                  DataCell(Text(item['dateReported'])),
-                  DataCell(
-                    Row(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () => print('View Item ${item['id']}'),
-                          icon: const Icon(
-                            FontAwesomeIcons.eye,
-                            size: 16,
-                            color: kWhite,
-                          ),
-                          label: Text(
-                            'View',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: kWhite,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                              0xFF4361EE,
-                            ), // Primary color
-                            shape: RoundedRectangleBorder(
-                              borderRadius: kSmallBorderRadius,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          onPressed:
-                              () => _showDeleteConfirmation(
-                                item['id'],
-                                item['itemName'],
-                                'item',
-                              ),
-                          icon: const Icon(
-                            FontAwesomeIcons.trash,
-                            size: 16,
-                            color: kWhite,
-                          ),
-                          label: Text(
-                            'Delete',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              color: kWhite,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(
-                              0xFFF72585,
-                            ), // Danger color
-                            shape: RoundedRectangleBorder(
-                              borderRadius: kSmallBorderRadius,
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildUsersTable(List<Map<String, dynamic>> users) {
-    if (users.isEmpty) {
-      return _buildEmptyState('No registered users found');
-    }
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columnSpacing: 20,
-        dataRowMinHeight: 50,
-        dataRowMaxHeight: 60,
-        headingRowColor: MaterialStateProperty.all(const Color(0xFFF8F9FA)),
-        headingTextStyle: GoogleFonts.poppins(
-          fontWeight: FontWeight.w500,
-          color: kGrey,
-          fontSize: 14,
-        ),
-        dataTextStyle: GoogleFonts.poppins(color: kBlack, fontSize: 14),
-        columns: const [
-          DataColumn(label: Text('ID')),
-          DataColumn(label: Text('Full Name')),
-          DataColumn(label: Text('Email')),
-          DataColumn(label: Text('Phone')),
-          DataColumn(label: Text('Registered')),
-          DataColumn(label: Text('User Type')),
-          DataColumn(label: Text('Actions')),
-        ],
-        rows:
-            users.map((user) {
-              return DataRow(
-                cells: [
-                  DataCell(Text(user['id'].toString())),
-                  DataCell(Text(user['fullName'])),
-                  DataCell(Text(user['email'])),
-                  DataCell(Text(user['phone'] ?? 'N/A')),
-                  DataCell(Text(user['registered'])),
-                  DataCell(
-                    DropdownButton<String>(
-                      value: user['userType'],
-                      onChanged: (String? newValue) {
-                        if (newValue != null) {
-                          setState(() {
-                            user['userType'] = newValue; // Simulate update
-                          });
-                          print('User ${user['id']} type changed to $newValue');
-                        }
-                      },
-                      items:
-                          <String>[
-                            'user',
-                            'admin',
-                          ].map<DropdownMenuItem<String>>((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value.toCapitalized()),
-                            );
-                          }).toList(),
-                    ),
-                  ),
-                  DataCell(
-                    Row(
-                      children: [
-                        if (user['id'] == 103) // Simulate current admin
-                          Text(
-                            'Current Admin',
-                            style: GoogleFonts.poppins(color: kGrey),
-                          ),
-                        if (user['id'] != 103)
-                          ElevatedButton.icon(
-                            onPressed:
-                                () => _showDeleteConfirmation(
-                                  user['id'],
-                                  user['fullName'],
-                                  'user',
-                                ),
-                            icon: const Icon(
-                              FontAwesomeIcons.trash,
-                              size: 16,
-                              color: kWhite,
-                            ),
-                            label: Text(
-                              'Delete',
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: kWhite,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(
-                                0xFFF72585,
-                              ), // Danger color
-                              shape: RoundedRectangleBorder(
-                                borderRadius: kSmallBorderRadius,
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(String status, String itemType) {
-    Color bgColor;
-    Color textColor;
-    String displayText;
-
-    if (itemType == 'Lost') {
-      switch (status) {
-        case 'not_found':
-          bgColor = const Color(0xFFFFE0E0);
-          textColor = const Color(0xFFD9534F);
-          displayText = 'Not Found';
-          break;
-        case 'found':
-          bgColor = const Color(0xFFE6FFE6);
-          textColor = const Color(0xFF5CB85C);
-          displayText = 'Found';
-          break;
-        case 'pending_approval':
-          bgColor = const Color(0xFFFFF3CD);
-          textColor = const Color(0xFFF0AD4E);
-          displayText = 'Pending Approval';
-          break;
-        case 'rejected':
-          bgColor = const Color(0xFFE9ECEF);
-          textColor = const Color(0xFF6C757D);
-          displayText = 'Rejected';
-          break;
-        default:
-          bgColor = Colors.grey[200]!;
-          textColor = Colors.grey[700]!;
-          displayText = status.replaceAll('_', ' ').toCapitalized();
+  Future<void> _fetchAdminData() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final User? currentUser = supabaseService.currentUser;
+      if (currentUser != null) {
+        // Fetch admin's full name
+        final Map<String, dynamic> adminProfile = await supabaseService.client
+            .from('profiles')
+            .select('full_name')
+            .eq('id', currentUser.id)
+            .single();
+        _adminFullName = adminProfile['full_name'] ?? 'Admin User';
       }
-    } else {
-      // Found items
-      switch (status) {
-        case 'unclaimed':
-          bgColor = const Color(0xFFFFE0E0);
-          textColor = const Color(0xFFD9534F);
-          displayText = 'Unclaimed';
-          break;
-        case 'claimed':
-          bgColor = const Color(0xFFE6FFE6);
-          textColor = const Color(0xFF5CB85C);
-          displayText = 'Claimed';
-          break;
-        case 'pending_approval':
-          bgColor = const Color(0xFFFFF3CD);
-          textColor = const Color(0xFFF0AD4E);
-          displayText = 'Pending Approval';
-          break;
-        case 'rejected':
-          bgColor = const Color(0xFFE9ECEF);
-          textColor = const Color(0xFF6C757D);
-          displayText = 'Rejected';
-          break;
-        default:
-          bgColor = Colors.grey[200]!;
-          textColor = Colors.grey[700]!;
-          displayText = status.replaceAll('_', ' ').toCapitalized();
-      }
-    }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        displayText,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: textColor,
-        ),
-      ),
-    );
+      // Fetch all lost items
+      final List<Map<String, dynamic>> lostItems = await supabaseService.client
+          .from('lost_items')
+          .select()
+          .order('created_at', ascending: false);
+
+      // Fetch all found items
+      final List<Map<String, dynamic>> foundItems = await supabaseService.client
+          .from('found_items')
+          .select()
+          .order('created_at', ascending: false);
+
+      // Combine and sort items (you might want more sophisticated sorting)
+      _reportedItems = [...lostItems, ...foundItems];
+      _reportedItems.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
+
+      // Fetch all users (excluding the current admin if desired, or filter by user_type)
+      final List<Map<String, dynamic>> users = await supabaseService.client
+          .from('profiles')
+          .select()
+          .order('full_name', ascending: true);
+      _users = users;
+
+    } catch (e) {
+      debugPrint('Error fetching admin data: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Error',
+        'Failed to load admin data: $e',
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
-  Widget _buildEmptyState(String message) {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            FontAwesomeIcons.boxOpen,
-            size: 48,
-            color: const Color(0xFFDEE2E6),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(int id, String name, String type) {
-    String message;
-    if (type == 'item') {
-      message =
-          'You are about to delete:\n$name (ID: $id)\nThis action cannot be undone!';
-    } else {
-      message =
-          'You are about to delete user:\n$name (ID: $id)\nThis will permanently delete the user account and all their items!';
-    }
-
+  void _showConfirmationDialog(String type, String id, String message, VoidCallback onConfirm) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: kWhite,
-          shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+          shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius), // Use kDefaultBorderRadius
           title: Row(
             children: [
-              Icon(
-                FontAwesomeIcons.exclamationTriangle,
-                color: kRedError,
-                size: 24,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'Confirm Deletion',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 20,
-                ),
-              ),
+              Icon(Icons.warning_amber_rounded, color: kDarkRed),
+              const SizedBox(width: kSmallSpacing), // Use kSmallSpacing
+              Text('Confirm Delete', style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 20)),
             ],
           ),
           content: Text(
             message,
-            style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
+            style: GoogleFonts.poppins(color: kGrey, fontSize: 16), // Use kGrey
           ),
           actions: <Widget>[
             TextButton(
@@ -756,37 +115,484 @@ class _AdminHomepageScreenState extends State<AdminHomepageScreen> {
               style: TextButton.styleFrom(
                 backgroundColor: kLightGrey,
                 foregroundColor: kBlack,
-                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius), // Use kSmallBorderRadius
               ),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-              ),
+              child: Text('Cancel', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
             ),
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                print('Confirmed delete $type: $id');
-                // Implement actual delete logic here
+                onConfirm();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF72585), // Danger color
+                backgroundColor: kRedError, // Danger color
                 foregroundColor: kWhite,
-                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius), // Use kSmallBorderRadius
+                elevation: 5, // Add elevation
               ),
-              child: Text(
-                'Confirm Delete',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
-              ),
+              child: Text('Confirm Delete', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
             ),
           ],
         );
       },
     );
   }
-}
 
-extension StringExtension on String {
-  String toCapitalized() =>
-      length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
+  Future<void> _deleteItem(String itemId, String itemType) async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      if (itemType == 'Lost') {
+        await supabaseService.client.from('lost_items').delete().eq('id', itemId);
+      } else { // Found
+        await supabaseService.client.from('found_items').delete().eq('id', itemId);
+      }
+      MessageModal.show(context, MessageType.success, 'Deleted', '$itemType item deleted successfully.');
+      _fetchAdminData(); // Refresh data
+    } catch (e) {
+      debugPrint('Error deleting item: $e');
+      MessageModal.show(context, MessageType.error, 'Error', 'Failed to delete item: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteUser(String userId) async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      // Deleting from 'profiles' will cascade delete from 'auth.users' due to FK constraint
+      await supabaseService.client.from('profiles').delete().eq('id', userId);
+      MessageModal.show(context, MessageType.success, 'Deleted', 'User deleted successfully.');
+      _fetchAdminData(); // Refresh data
+    } catch (e) {
+      debugPrint('Error deleting user: $e');
+      MessageModal.show(context, MessageType.error, 'Error', 'Failed to delete user: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kPrimaryYellowGreen,
+      appBar: AppBar(
+        backgroundColor: kDarkRed,
+        title: Text(
+          'Admin Dashboard',
+          style: GoogleFonts.poppins(
+            color: kWhite,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: kWhite),
+            onPressed: () async {
+              await supabaseService.signOut();
+              // Navigation to login is handled by main.dart's StreamBuilder
+            },
+          ),
+          const SizedBox(width: kSmallSpacing), // Consistent spacing
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: kDefaultPadding, // Use kDefaultPadding
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome, $_adminFullName!',
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: kDarkRed,
+                  ),
+                ),
+                const SizedBox(height: kLargeSpacing), // Consistent spacing
+                _buildTabSelection(),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+                : RefreshIndicator( // Add RefreshIndicator for pull-to-refresh
+                    onRefresh: _fetchAdminData,
+                    child: _selectedTabIndex == 0
+                        ? _buildItemsList()
+                        : _buildUsersList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabSelection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: kLightYellow,
+        borderRadius: kDefaultBorderRadius, // Use kDefaultBorderRadius
+        boxShadow: const [kDefaultBoxShadow], // Use kDefaultBoxShadow
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildTabButton('Items', 0),
+          ),
+          Expanded(
+            child: _buildTabButton('Users', 1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(String title, int index) {
+    bool isSelected = _selectedTabIndex == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTabIndex = index;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: kMediumSpacing), // Use kMediumSpacing
+        decoration: BoxDecoration(
+          color: isSelected ? kDarkRed : Colors.transparent,
+          borderRadius: isSelected ? kDefaultBorderRadius : BorderRadius.zero,
+        ),
+        child: Center(
+          child: Text(
+            title,
+            style: GoogleFonts.poppins(
+              color: isSelected ? kWhite : kDarkRed,
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemsList() {
+    if (_reportedItems.isEmpty) {
+      return Center(
+        child: Column( // Added Column for illustration and text
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inventory_2_outlined, size: 60, color: kGrey),
+            const SizedBox(height: kSmallSpacing),
+            Text(
+              'No items reported yet.',
+              style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: kDefaultPadding, // Use kDefaultPadding
+      itemCount: _reportedItems.length,
+      itemBuilder: (context, index) {
+        final item = _reportedItems[index];
+        final String itemType = item.containsKey('date_lost') ? 'Lost' : 'Found';
+        final String dateField = item.containsKey('date_lost') ? 'date_lost' : 'date_found';
+        final String locationField = item.containsKey('lost_location') ? 'lost_location' : 'found_location';
+
+        return _buildItemListItem(
+          item['id'] as String, // Explicitly cast to String
+          item['item_name'],
+          itemType,
+          item['reported_by_full_name'] ?? 'N/A', // Assuming a 'reported_by_full_name' field
+          item['status'],
+          item[dateField],
+          item[locationField],
+          item['image_url'],
+        );
+      },
+    );
+  }
+
+  Widget _buildItemListItem(
+    String id,
+    String itemName,
+    String itemType,
+    String reportedBy,
+    String status,
+    String date,
+    String location,
+    String? imageUrl,
+  ) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
+      shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius), // Use kSmallBorderRadius
+      elevation: 3, // Consistent elevation
+      child: Padding(
+        padding: kMediumPadding, // Use kMediumPadding
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: kLightGrey,
+                    borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
+                    image: imageUrl != null && imageUrl.isNotEmpty
+                        ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
+                        : null,
+                  ),
+                  child: imageUrl == null || imageUrl.isEmpty
+                      ? Icon(Icons.image_not_supported, size: 30, color: kGrey)
+                      : null,
+                ),
+                const SizedBox(width: kMediumSpacing), // Consistent spacing
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '$itemName (${capitalizeFirstLetter(itemType)})', // Use helper function
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: kDarkRed,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Status: ${capitalizeFirstLetter(status)}', // Use helper function
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: kGrey,
+                        ),
+                      ),
+                      Text(
+                        'Date: $date',
+                        style: GoogleFonts.poppins(fontSize: 14, color: kGrey),
+                      ),
+                      Text(
+                        'Location: $location',
+                        style: GoogleFonts.poppins(fontSize: 14, color: kGrey),
+                      ),
+                      Text(
+                        'Reported By: $reportedBy',
+                        style: GoogleFonts.poppins(fontSize: 14, color: kGrey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: kSmallSpacing), // Consistent spacing
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // View Details Button
+                TextButton(
+                  onPressed: () {
+                    // Ensure 'id' is not null or empty before navigating
+                    if (id.isNotEmpty) {
+                      if (itemType == 'Lost') {
+                        Navigator.pushNamed(context, '/lost_item_view', arguments: id);
+                      } else {
+                        Navigator.pushNamed(context, '/found_item_view', arguments: id);
+                      }
+                    } else {
+                      MessageModal.show(context, MessageType.error, 'Error', 'Item ID is missing for navigation.');
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: kDarkRed,
+                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                  ),
+                  child: Text('View Details', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(width: kSmallSpacing), // Consistent spacing
+                // Delete Button
+                IconButton(
+                  icon: const Icon(Icons.delete, color: kRedError),
+                  onPressed: () {
+                    _showConfirmationDialog(
+                      itemType,
+                      id,
+                      'Are you sure you want to delete this $itemType item?',
+                      () => _deleteItem(id, itemType),
+                    );
+                  },
+                ),
+                // Add Approve/Reject buttons here for 'pending_approval' status
+                // if (status == 'pending_approval') ...[
+                //   IconButton(
+                //     icon: const Icon(Icons.check_circle, color: kGreenSuccess),
+                //     onPressed: () {
+                //       // Implement approve logic
+                //       print('Approve $itemType: $id');
+                //     },
+                //   ),
+                //   IconButton(
+                //     icon: const Icon(Icons.cancel, color: kRedError),
+                //     onPressed: () {
+                //       // Implement reject logic
+                //       print('Reject $itemType: $id');
+                //     },
+                //   ),
+                // ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUsersList() {
+    if (_users.isEmpty) {
+      return Center(
+        child: Column( // Added Column for illustration and text
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_alt_outlined, size: 60, color: kGrey),
+            const SizedBox(height: kSmallSpacing),
+            Text(
+              'No users found.',
+              style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: kDefaultPadding, // Use kDefaultPadding
+      itemCount: _users.length,
+      itemBuilder: (context, index) {
+        final user = _users[index];
+        return _buildUserListItem(
+          user['id'] as String, // Explicitly cast to String
+          user['full_name'] ?? 'N/A',
+          user['email'] ?? 'N/A',
+          user['user_type'] ?? 'user',
+        );
+      },
+    );
+  }
+
+  Widget _buildUserListItem(
+    String id,
+    String fullName,
+    String email,
+    String userType,
+  ) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
+      shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius), // Use kSmallBorderRadius
+      elevation: 3, // Consistent elevation
+      child: Padding(
+        padding: kMediumPadding, // Use kMediumPadding
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundColor: kPrimaryYellowGreen,
+                  child: Text(
+                    fullName.isNotEmpty ? fullName[0].toUpperCase() : '?',
+                    style: GoogleFonts.poppins(color: kDarkRed, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: kMediumSpacing), // Consistent spacing
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fullName,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: kDarkRed,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        email,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: kGrey,
+                        ),
+                      ),
+                      Text(
+                        'Type: ${capitalizeFirstLetter(userType)}', // Use helper function
+                        style: GoogleFonts.poppins(fontSize: 14, color: kGrey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: kSmallSpacing), // Consistent spacing
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Edit User Button
+                TextButton(
+                  onPressed: () {
+                    // Ensure 'id' is not null or empty before navigating
+                    if (id.isNotEmpty) {
+                      Navigator.pushNamed(context, '/admin_edit_user', arguments: id);
+                    } else {
+                      MessageModal.show(context, MessageType.error, 'Error', 'User ID is missing for navigation.');
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: kYellowEdit,
+                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                  ),
+                  child: Text('Edit', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(width: kSmallSpacing), // Consistent spacing
+                // Delete User Button
+                IconButton(
+                  icon: const Icon(Icons.delete, color: kRedError),
+                  onPressed: () {
+                    _showConfirmationDialog(
+                      'User',
+                      id,
+                      'Are you sure you want to delete user "$fullName"? This will delete their account and all associated items.',
+                      () => _deleteUser(id),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
