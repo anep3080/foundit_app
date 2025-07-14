@@ -1,280 +1,338 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../ui_constants.dart'; // Import your constants file
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../ui_constants.dart';
+import '../services/supabase_service.dart';
+import 'dart:async'; // Import for Timer
 
-class HomepageScreen extends StatelessWidget {
+class HomepageScreen extends StatefulWidget {
   const HomepageScreen({super.key});
+
+  @override
+  State<HomepageScreen> createState() => _HomepageScreenState();
+}
+
+class _HomepageScreenState extends State<HomepageScreen> {
+  List<Map<String, dynamic>> _foundItems = [];
+  List<Map<String, dynamic>> _lostItems = [];
+  bool _isLoading = true;
+  String? _currentUserUserType;
+  final TextEditingController _searchController = TextEditingController();
+  String _lastSearchedText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentUserType();
+    _fetchItems(); // Initial fetch
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchCurrentUserType() async {
+    final User? currentUser = supabaseService.currentUser;
+    if (currentUser != null) {
+      try {
+        final profile = await supabaseService.client
+            .from('profiles')
+            .select('user_type')
+            .eq('id', currentUser.id)
+            .single();
+        setState(() {
+          _currentUserUserType = profile['user_type'];
+        });
+      } catch (e) {
+        debugPrint('Error fetching user type: $e');
+        setState(() {
+          _currentUserUserType = 'user';
+        });
+      }
+    } else {
+      setState(() {
+        _currentUserUserType = 'guest';
+      });
+    }
+  }
+
+  Future<void> _fetchItems({String? searchQuery}) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      var foundQuery = supabaseService.client.from('found_items').select();
+      var lostQuery = supabaseService.client.from('lost_items').select();
+
+      if (searchQuery != null && searchQuery.isNotEmpty) {
+        final pattern = '%$searchQuery%';
+        foundQuery = foundQuery.or(
+            'item_name.ilike.$pattern,description.ilike.$pattern,category.ilike.$pattern,found_location.ilike.$pattern');
+        lostQuery = lostQuery.or(
+            'item_name.ilike.$pattern,description.ilike.$pattern,category.ilike.$pattern,lost_location.ilike.$pattern');
+      }
+
+      final foundItems = await foundQuery.order('created_at', ascending: false).limit(5);
+      final lostItems = await lostQuery.order('created_at', ascending: false).limit(5);
+
+      setState(() {
+        _foundItems = foundItems;
+        _lostItems = lostItems;
+      });
+    } catch (e) {
+      debugPrint('Fetch error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _handleSearch() {
+    final input = _searchController.text.trim();
+    if (input != _lastSearchedText) {
+      _lastSearchedText = input;
+      _fetchItems(searchQuery: input);
+    }
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _lastSearchedText = '';
+    _fetchItems();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kPrimaryYellowGreen,
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              _buildNavbar(context),
-              const SizedBox(height: 30),
-              _buildSection(
-                title: 'Recent found items',
-                onViewAll: () => print('View all found items'),
-                items: _buildFoundItems(), // Placeholder
-              ),
-              const SizedBox(height: 30),
-              _buildSection(
-                title: 'Recent lost items',
-                onViewAll: () => print('View all lost items'),
-                items: _buildLostItems(), // Placeholder
-              ),
-              const SizedBox(height: 30),
-            ],
+      appBar: AppBar(
+        backgroundColor: kDarkRed,
+        title: Text('FoundIt', style: GoogleFonts.poppins(color: kWhite, fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        actions: [
+          // New: User Dashboard Button
+          IconButton(
+            icon: const Icon(Icons.dashboard, color: kWhite), // Or a different icon like Icons.folder_shared
+            onPressed: () => Navigator.pushNamed(context, '/user_dashboard'),
+            tooltip: 'My Reports',
           ),
-        ),
+          IconButton(
+            icon: const Icon(Icons.person, color: kWhite),
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
+          ),
+          if (_currentUserUserType == 'admin')
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings, color: kWhite),
+              onPressed: () => Navigator.pushNamed(context, '/admin_homepage'),
+            ),
+          const SizedBox(width: kSmallSpacing),
+        ],
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+          : RefreshIndicator(
+              onRefresh: () => _fetchItems(searchQuery: _searchController.text),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: kDefaultPadding,
+                child: Column(
+                  children: [
+                    const SizedBox(height: kLargeSpacing),
+                    _buildSearchBar(),
+                    const SizedBox(height: kLargeSpacing),
+                    _buildSection(
+                      title: 'Recent Found Items',
+                      onViewAll: () => Navigator.pushNamed(context, '/all_found_items'),
+                      items: _foundItems,
+                      itemType: 'found',
+                    ),
+                    const SizedBox(height: kLargeSpacing),
+                    _buildSection(
+                      title: 'Recent Lost Items',
+                      onViewAll: () => Navigator.pushNamed(context, '/all_lost_items'),
+                      items: _lostItems,
+                      itemType: 'lost',
+                    ),
+                    const SizedBox(height: kLargeSpacing),
+                  ],
+                ),
+              ),
+            ),
       floatingActionButton: _buildFabContainer(),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
-  Widget _buildNavbar(BuildContext context) {
+  Widget _buildSearchBar() {
     return Row(
       children: [
-        Text(
-          'FoundIt',
-          style: GoogleFonts.poppins(
-            fontSize: 36,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(width: 20),
         Expanded(
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 700),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search for items...',
-                hintStyle: GoogleFonts.poppins(color: Colors.grey[600]),
-                prefixIcon: const Icon(FontAwesomeIcons.search, size: 18, color: kBlack),
-                filled: true,
-                fillColor: kWhite,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: const BorderSide(color: kBlack, width: 2),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: const BorderSide(color: kBlack, width: 2),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: const BorderSide(color: kDarkRed, width: 2),
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-              ),
-              onSubmitted: (query) => print('Search query: $query'),
-            ),
-          ),
-        ),
-        const SizedBox(width: 15),
-        Row(
-          children: [
-            _buildNavIcon(FontAwesomeIcons.tachometerAlt, 'Dashboard', () => print('Dashboard')),
-            _buildNavIcon(FontAwesomeIcons.user, 'Profile', () => print('Profile')),
-            _buildNavIcon(FontAwesomeIcons.signOutAlt, 'Logout', () => print('Logout')),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNavIcon(IconData icon, String tooltip, VoidCallback onPressed) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7.5),
-      child: Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(50),
-          child: Container(
-            width: 38,
-            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: kWhite,
-              borderRadius: BorderRadius.circular(50),
-              border: Border.all(color: kBlack, width: 2),
+              borderRadius: kSmallBorderRadius,
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
             ),
-            child: Icon(icon, color: kBlack, size: 18),
+            child: Row(
+              children: [
+                const Icon(Icons.search, color: kGrey),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Search items...',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                    style: GoogleFonts.poppins(color: kBlack),
+                    onSubmitted: (_) => _handleSearch(),
+                  ),
+                ),
+                if (_searchController.text.isNotEmpty)
+                  GestureDetector(
+                    onTap: _clearSearch,
+                    child: const Icon(Icons.clear, color: kGrey),
+                  ),
+              ],
+            ),
           ),
         ),
-      ),
+        const SizedBox(width: 10),
+        ElevatedButton(
+          onPressed: _handleSearch,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kDarkRed,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          child: Text('Search', style: GoogleFonts.poppins(color: kWhite, fontWeight: FontWeight.w500)),
+        ),
+      ],
     );
   }
 
   Widget _buildSection({
     required String title,
     required VoidCallback onViewAll,
-    required List<Widget> items,
+    required List<Map<String, dynamic>> items,
+    required String itemType,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(25),
-      decoration: BoxDecoration(
-        color: kLightYellow,
-        borderRadius: kDefaultBorderRadius,
-        boxShadow: const [kDefaultBoxShadow],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE))),
-            ),
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: onViewAll,
-                  child: Text(
-                    'View all >',
-                    style: GoogleFonts.poppins(
-                      color: kDarkRed,
-                      fontWeight: FontWeight.w600,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          items.isEmpty
-              ? Text(
-                  'No items yet.',
-                  style: GoogleFonts.poppins(color: Colors.grey[700]),
-                )
-              : GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 180, // minmax(180px, 1fr)
-                    crossAxisSpacing: 20,
-                    mainAxisSpacing: 20,
-                    childAspectRatio: 0.8, // Adjust as needed for content
-                  ),
-                  itemCount: items.length,
-                  itemBuilder: (context, index) => items[index],
-                ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildFoundItems() {
-    // Placeholder for actual data
-    return List.generate(5, (index) {
-      return _buildItemCard(
-        itemName: 'Found Item ${index + 1}',
-        description: 'A short description of the found item, possibly truncated.',
-        imageUrl: 'https://via.placeholder.com/150/FFC107/000000?text=Found', // Placeholder image
-        onTap: () => print('View Found Item ${index + 1}'),
-      );
-    });
-  }
-
-  List<Widget> _buildLostItems() {
-    // Placeholder for actual data
-    return List.generate(5, (index) {
-      return _buildItemCard(
-        itemName: 'Lost Item ${index + 1}',
-        description: 'A short description of the lost item, possibly truncated.',
-        imageUrl: 'https://via.placeholder.com/150/DC3545/FFFFFF?text=Lost', // Placeholder image
-        onTap: () => print('View Lost Item ${index + 1}'),
-      );
-    });
-  }
-
-  Widget _buildItemCard({
-    required String itemName,
-    required String description,
-    String? imageUrl,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: kWhite,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
-            BoxShadow(
-              color: Color.fromRGBO(0, 0, 0, 0.05),
-              blurRadius: 8,
-              offset: Offset(0, 2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold, color: kDarkRed)),
+            TextButton(
+              onPressed: onViewAll,
+              style: TextButton.styleFrom(foregroundColor: kGrey),
+              child: Text('View All', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
             ),
           ],
         ),
-        padding: const EdgeInsets.all(15),
+        const SizedBox(height: kMediumSpacing),
+        items.isEmpty
+            ? Center(
+                child: Padding(
+                  padding: kDefaultPadding,
+                  child: Column(
+                    children: [
+                      Icon(itemType == 'found' ? Icons.search : Icons.help_outline, size: 60, color: kGrey),
+                      const SizedBox(height: kSmallSpacing),
+                      Text('No $itemType items reported yet.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(color: kGrey, fontSize: 16)),
+                    ],
+                  ),
+                ),
+              )
+            : SizedBox(
+                height: 220,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return _buildItemCard(
+                      context,
+                      item['id'] as String, // Explicitly cast to String
+                      item['item_name'],
+                      item['description'],
+                      item['image_url'],
+                      itemType,
+                    );
+                  },
+                ),
+              ),
+      ],
+    );
+  }
+
+  Widget _buildItemCard(
+    BuildContext context,
+    String itemId,
+    String itemName,
+    String description,
+    String? imageUrl,
+    String itemType,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pushNamed(
+            context, itemType == 'lost' ? '/lost_item_view' : '/found_item_view',
+            arguments: itemId);
+      },
+      child: Container(
+        width: 180,
+        margin: const EdgeInsets.only(right: kMediumSpacing),
+        decoration: BoxDecoration(
+          color: kLightYellow,
+          borderRadius: kDefaultBorderRadius,
+          boxShadow: const [kDefaultBoxShadow],
+        ),
         child: Column(
           children: [
-            Container(
-              width: double.infinity,
-              height: 120,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0E0E0),
-                borderRadius: BorderRadius.circular(8),
+            Expanded(
+              flex: 3,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                child: imageUrl != null && imageUrl.isNotEmpty
+                    ? Image.network(imageUrl, width: double.infinity, fit: BoxFit.cover)
+                    : Image.network('https://placehold.co/700x700/CCCCCC/FFFFFF?text=No+Image', fit: BoxFit.cover),
               ),
-              child: imageUrl != null && imageUrl.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Center(
-                          child: Text(
-                            'No Image',
-                            style: GoogleFonts.poppins(color: Colors.grey[700]),
-                          ),
-                        ),
-                      ),
-                    )
-                  : Center(
-                      child: Text(
-                        'No Image',
-                        style: GoogleFonts.poppins(color: Colors.grey[700]),
-                      ),
-                    ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              itemName,
-              style: GoogleFonts.poppins(
-                color: const Color(0xFF333333),
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
+            const SizedBox(height: kSmallSpacing),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
+              child: Text(
+                itemName,
+                style: GoogleFonts.poppins(
+                  color: const Color(0xFF333333),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
-            Text(
-              description,
-              style: GoogleFonts.poppins(
-                color: const Color(0xFF555555),
-                fontSize: 12,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
+              child: Text(
+                description,
+                style: GoogleFonts.poppins(color: kGrey, fontSize: 12),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
             ),
+            const SizedBox(height: kSmallSpacing),
           ],
         ),
       ),
@@ -285,9 +343,13 @@ class HomepageScreen extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildFab(FontAwesomeIcons.question, 'Report Lost Item', () => print('Report Lost')),
-        const SizedBox(height: 15),
-        _buildFab(FontAwesomeIcons.plus, 'Report Found Item', () => print('Report Found')),
+        _buildFab(FontAwesomeIcons.question, 'Report Lost Item', () {
+          Navigator.pushNamed(context, '/report_lost');
+        }),
+        const SizedBox(height: kMediumSpacing),
+        _buildFab(FontAwesomeIcons.plus, 'Report Found Item', () {
+          Navigator.pushNamed(context, '/report_found');
+        }),
       ],
     );
   }
@@ -299,9 +361,10 @@ class HomepageScreen extends StatelessWidget {
         onPressed: onPressed,
         backgroundColor: kDarkRed,
         foregroundColor: kWhite,
-        shape: const CircleBorder(),
-        elevation: 4,
-        child: Icon(icon, size: 24),
+        heroTag: tooltip,
+        elevation: 5,
+        shape: RoundedRectangleBorder(borderRadius: kCircularBorderRadius),
+        child: Icon(icon),
       ),
     );
   }

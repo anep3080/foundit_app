@@ -1,10 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../ui_constants.dart'; // Import your constants file
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart'; // Import url_launcher
+import '../ui_constants.dart';
+import '../services/supabase_service.dart';
+import '../widgets/message_modal.dart';
+
+// Helper function to capitalize the first letter of a string
+String capitalizeFirstLetter(String text) {
+  if (text.isEmpty) {
+    return '';
+  }
+  return '${text[0].toUpperCase()}${text.substring(1).toLowerCase()}';
+}
 
 class FoundItemViewScreen extends StatefulWidget {
-  final String itemId; // Assuming an item ID is passed
+  final String itemId;
 
   const FoundItemViewScreen({super.key, required this.itemId});
 
@@ -13,400 +24,369 @@ class FoundItemViewScreen extends StatefulWidget {
 }
 
 class _FoundItemViewScreenState extends State<FoundItemViewScreen> {
-  // Placeholder data for the item
-  String _itemName = 'Found Backpack';
-  String _description = 'A blue backpack containing books and a laptop. Found near the cafeteria.';
-  String _dateFound = '2023-10-22'; // Changed
-  String _foundLocation = 'Cafeteria'; // Changed
-  String _category = 'Bags';
-  String? _imageUrl = 'https://via.placeholder.com/700x700/007bff/FFFFFF?text=Found+Backpack'; // Placeholder image
-  String _status = 'unclaimed'; // 'unclaimed', 'claimed', 'pending_approval', 'rejected' // Changed
-  bool _isOwner = true; // Simulate if current user is the owner
-  String? _reporterTelegram = '@finder_user'; // Simulate reporter's telegram
+  Map<String, dynamic>? _itemData;
+  bool _isLoading = true;
+  String? _currentUserUserType; // To store the user's type
+  bool _isCurrentUserReporter = false; // To check if the current user reported this item
+  String? _reporterTelegramUsername; // To store the reporter's Telegram username
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchItemDetails();
+    _fetchCurrentUserType();
+  }
+
+  Future<void> _fetchCurrentUserType() async {
+    final User? currentUser = supabaseService.currentUser;
+    if (currentUser != null) {
+      try {
+        final Map<String, dynamic> profile = await supabaseService.client
+            .from('profiles')
+            .select('user_type')
+            .eq('id', currentUser.id)
+            .single();
+        setState(() {
+          _currentUserUserType = profile['user_type'];
+        });
+      } catch (e) {
+        debugPrint('Error fetching user type: $e');
+        setState(() {
+          _currentUserUserType = 'user'; // Default to 'user' on error
+        });
+      }
+    } else {
+      setState(() {
+        _currentUserUserType = 'guest'; // Guest if not logged in
+      });
+    }
+  }
+
+  Future<void> _fetchItemDetails() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final Map<String, dynamic> response = await supabaseService.client
+          .from('found_items')
+          .select('*, reporter_id(id, telegram_username)') // Explicitly select 'id' from reporter_id
+          .eq('id', widget.itemId)
+          .single();
+
+      setState(() {
+        _itemData = response;
+        final User? currentUser = supabaseService.currentUser;
+
+        debugPrint('Fetched item data: $_itemData'); // Debug print
+        debugPrint('Current User ID: ${currentUser?.id}'); // Debug print
+        debugPrint('Type of response[\'reporter_id\']: ${response['reporter_id'].runtimeType}'); // Added debug
+
+        if (currentUser != null && _itemData!['reporter_id'] != null) {
+          String? itemReporterId;
+          String? fetchedTelegramUsername;
+
+          if (response['reporter_id'] is Map) {
+            final Map reporterMap = response['reporter_id'];
+            itemReporterId = reporterMap['id'] as String?; // This should now correctly get the ID
+            fetchedTelegramUsername = reporterMap['telegram_username'] as String?;
+          } else if (response['reporter_id'] is String) {
+            // This path is less likely if the foreign key is correctly set up
+            itemReporterId = response['reporter_id'] as String?;
+            fetchedTelegramUsername = null; // Cannot get telegram username without successful join
+          } else {
+            // Fallback for any other unexpected type or null
+            itemReporterId = null;
+            fetchedTelegramUsername = null;
+          }
+
+          _reporterTelegramUsername = fetchedTelegramUsername;
+          _isCurrentUserReporter = (itemReporterId != null && currentUser != null && itemReporterId == currentUser.id);
+
+          debugPrint('Item Reporter ID: $itemReporterId'); // Debug print
+          debugPrint('Is Current User Reporter: $_isCurrentUserReporter'); // Debug print
+          debugPrint('Reporter Telegram Username: $_reporterTelegramUsername'); // Debug print
+
+        } else {
+          _isCurrentUserReporter = false;
+          _reporterTelegramUsername = null;
+          debugPrint('No current user or reporter_id is null in item data.');
+        }
+      });
+    } catch (e) {
+      debugPrint('Error fetching found item details: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Error',
+        'Failed to load item details: ${e.toString()}',
+      );
+      // Removed Navigator.pop(context); here to keep the "Item not found" message visible
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateItemStatus(String newStatus) async {
+    if (_itemData == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabaseService.client
+          .from('found_items')
+          .update({'status': newStatus})
+          .eq('id', widget.itemId);
+
+      MessageModal.show(
+        context,
+        MessageType.success,
+        'Success!',
+        'Item status updated to ${capitalizeFirstLetter(newStatus)}.',
+      );
+      _fetchItemDetails(); // Refresh details after update
+    } catch (e) {
+      debugPrint('Error updating item status: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Update Failed',
+        'Failed to update item status: ${e.toString()}',
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // Function to launch Telegram
+  Future<void> _launchTelegram(String username) async {
+    final Uri telegramUrl = Uri.parse('https://t.me/$username');
+    if (await canLaunchUrl(telegramUrl)) {
+      await launchUrl(telegramUrl);
+    } else {
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Error',
+        'Could not launch Telegram. Make sure the app is installed or the username is correct.',
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kPrimaryYellowGreen,
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 30),
-              _buildContentBox(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'FoundIt',
+      appBar: AppBar(
+        backgroundColor: kDarkRed,
+        title: Text(
+          _itemData?['item_name'] ?? 'Found Item Details',
           style: GoogleFonts.poppins(
-            fontSize: 32,
-            fontWeight: FontWeight.w800,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.1),
-                offset: const Offset(2, 2),
-                blurRadius: 2,
-              ),
-            ],
+            color: kWhite,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        Row(
-          children: [
-            _buildNavIcon(FontAwesomeIcons.home, 'Home', () => print('Home')),
-            _buildNavIcon(FontAwesomeIcons.tachometerAlt, 'Dashboard', () => print('Dashboard')),
-          ],
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
+          onPressed: () {
+            Navigator.pop(context);
+          },
         ),
-      ],
-    );
-  }
-
-  Widget _buildNavIcon(IconData icon, String tooltip, VoidCallback onPressed) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5.0),
-      child: Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(50),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: kWhite,
-              borderRadius: BorderRadius.circular(50),
-              border: Border.all(color: kBlack, width: 2),
-            ),
-            child: Icon(icon, color: kBlack, size: 18),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContentBox() {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: kLightYellow,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [kDefaultBoxShadow],
-      ),
-      child: Stack(
-        children: [
-          Align(
-            alignment: Alignment.topLeft,
-            child: InkWell(
-              onTap: () => print('Back to Home'),
-              borderRadius: BorderRadius.circular(50),
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: kWhite,
-                  borderRadius: BorderRadius.circular(50),
-                  border: Border.all(color: kBlack, width: 2),
+        actions: [
+          if (_itemData != null && _currentUserUserType == 'admin')
+            PopupMenuButton<String>(
+              onSelected: (String result) {
+                _updateItemStatus(result);
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: 'unclaimed',
+                  enabled: _itemData!['status'] != 'unclaimed',
+                  child: Text('Mark as Unclaimed', style: GoogleFonts.poppins()),
                 ),
-                child: const Icon(FontAwesomeIcons.arrowLeft, color: kBlack, size: 18),
-              ),
+                PopupMenuItem<String>(
+                  value: 'claimed',
+                  enabled: _itemData!['status'] != 'claimed',
+                  child: Text('Mark as Claimed', style: GoogleFonts.poppins()),
+                ),
+                PopupMenuItem<String>(
+                  value: 'pending_approval',
+                  enabled: _itemData!['status'] != 'pending_approval',
+                  child: Text('Mark as Pending Approval', style: GoogleFonts.poppins()),
+                ),
+                PopupMenuItem<String>(
+                  value: 'rejected',
+                  enabled: _itemData!['status'] != 'rejected',
+                  child: Text('Mark as Rejected', style: GoogleFonts.poppins()),
+                ),
+              ],
+              icon: const Icon(Icons.more_vert, color: kWhite),
             ),
-          ),
-          if (_isOwner && _status != 'claimed' && _status != 'rejected') // Changed
-            Align(
-              alignment: Alignment.topRight,
-              child: InkWell(
-                onTap: () => print('Edit Item'),
-                borderRadius: BorderRadius.circular(50),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: kYellowEdit,
-                    borderRadius: BorderRadius.circular(50),
-                    border: Border.all(color: kYellowEdit, width: 2),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+          : _itemData == null
+              ? Center(
+                  child: Text(
+                    'Item not found or an error occurred.',
+                    style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
                   ),
-                  child: const Icon(FontAwesomeIcons.edit, color: Color(0xFF333333), size: 18),
-                ),
-              ),
-            ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 40), // Space for back/edit buttons
-              Container(
-                width: double.infinity,
-                height: 700,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0E0E0),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: _imageUrl != null && _imageUrl!.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.network(
-                          _imageUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Center(
-                            child: Text(
-                              'No Image Available',
-                              style: GoogleFonts.poppins(color: const Color(0xFF666666), fontSize: 18),
-                            ),
+                )
+              : SingleChildScrollView(
+                  padding: kDefaultPadding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          height: 250,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: kLightGrey,
+                            borderRadius: kDefaultBorderRadius,
+                            image: _itemData!['image_url'] != null && _itemData!['image_url'].isNotEmpty
+                                ? DecorationImage(
+                                    image: NetworkImage(_itemData!['image_url']),
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                           ),
-                        ),
-                      )
-                    : Center(
-                        child: Text(
-                          'No Image Available',
-                          style: GoogleFonts.poppins(color: const Color(0xFF666666), fontSize: 18),
+                          child: _itemData!['image_url'] == null || _itemData!['image_url'].isEmpty
+                              ? Center(
+                                  child: Icon(
+                                    Icons.image_not_supported,
+                                    size: 80,
+                                    color: kGrey,
+                                  ),
+                                )
+                              : null,
                         ),
                       ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                _itemName,
-                style: GoogleFonts.poppins(fontSize: 32, color: const Color(0xFF333333)),
-              ),
-              const SizedBox(height: 5),
-              _buildDetailRow('Category:', _category),
-              _buildDetailRow('Date Found:', _dateFound), // Changed
-              _buildDetailRow('Found Location:', _foundLocation), // Changed
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: kWhite,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color.fromRGBO(0, 0, 0, 0.05),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
+                      const SizedBox(height: kLargeSpacing),
+                      Text(
+                        _itemData!['item_name'] ?? 'N/A',
+                        style: GoogleFonts.poppins(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: kDarkRed,
+                        ),
+                      ),
+                      const SizedBox(height: kMediumSpacing),
+                      _buildDetailRow(
+                          'Description', _itemData!['description'] ?? 'N/A'),
+                      _buildDetailRow('Date Found', _itemData!['date_found'] ?? 'N/A'),
+                      _buildDetailRow(
+                          'Found Location', _itemData!['found_location'] ?? 'N/A'),
+                      _buildDetailRow(
+                          'Category', capitalizeFirstLetter(_itemData!['category'] ?? 'N/A')),
+                      _buildDetailRow(
+                          'Status', capitalizeFirstLetter(_itemData!['status'] ?? 'N/A'),
+                          isStatus: true),
+                      const SizedBox(height: kLargeSpacing),
+                      // Conditional buttons based on user type and item status
+                      if (_itemData!['status'] == 'unclaimed')
+                        if (_isCurrentUserReporter)
+                          Center(
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : () => _updateItemStatus('claimed'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kGreenSuccess,
+                                foregroundColor: kWhite,
+                                padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                                elevation: 5,
+                              ),
+                              child: Text('Mark as Claimed', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                            ),
+                          )
+                        else if (_reporterTelegramUsername != null && _reporterTelegramUsername!.isNotEmpty)
+                          Center(
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoading ? null : () => _launchTelegram(_reporterTelegramUsername!),
+                              icon: const Icon(Icons.chat),
+                              label: Text('Chat with Reporter', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kBlueInfo, // Use a suitable color for chat
+                                foregroundColor: kWhite,
+                                padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                                shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                                elevation: 5,
+                              ),
+                            ),
+                          ),
+                      if (_itemData!['status'] == 'claimed')
+                        Center(
+                          child: Text(
+                            'This item has been claimed.',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: kGreenSuccess,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Description',
-                      style: GoogleFonts.poppins(fontSize: 20, color: const Color(0xFF333333)),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _description,
-                      style: GoogleFonts.poppins(fontSize: 16, color: const Color(0xFF555555)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: kWhite,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color.fromRGBO(0, 0, 0, 0.05),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Column(
-                  children: [
-                    Text(
-                      'Current Status:',
-                      style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildStatusDisplay(_status),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              _buildActionButtons(),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _buildDetailRow(String label, String value, {bool isStatus = false}) {
+    Color? valueColor;
+    if (isStatus) {
+      switch (value.toLowerCase()) {
+        case 'unclaimed':
+          valueColor = kRedError;
+          break;
+        case 'claimed':
+          valueColor = kGreenSuccess;
+          break;
+        case 'pending_approval':
+          valueColor = kGrey;
+          break;
+        case 'rejected':
+          valueColor = kBlack;
+          break;
+        default:
+          valueColor = kBlack;
+      }
+    }
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.0),
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing / 2),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333), fontSize: 15),
+          SizedBox(
+            width: 120, // Align labels
+            child: Text(
+              '$label:',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF333333),
+                fontSize: 16,
+              ),
+            ),
           ),
-          Text(
-            value,
-            style: GoogleFonts.poppins(color: const Color(0xFF555555), fontSize: 15),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                color: valueColor ?? kBlack,
+                fontSize: 16,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildStatusDisplay(String status) {
-    Color bgColor;
-    Color textColor;
-    String displayText;
-
-    switch (status) {
-      case 'unclaimed': // Changed
-        bgColor = const Color(0xFFFFE0E0); // Light red
-        textColor = const Color(0xFFD9534F); // Darker red
-        displayText = '❌ Unclaimed'; // Changed
-        break;
-      case 'claimed': // Changed
-        bgColor = const Color(0xFFE6FFE6); // Light green
-        textColor = const Color(0xFF5CB85C); // Darker green
-        displayText = '✅ Claimed by owner'; // Changed
-        break;
-      case 'pending_approval':
-        bgColor = const Color(0xFFFFF3CD); // Light yellow
-        textColor = const Color(0xFFF0AD4E); // Darker yellow/orange
-        displayText = '⏳ Pending Approval';
-        break;
-      case 'rejected':
-        bgColor = const Color(0xFFE9ECEF); // Light grey
-        textColor = const Color(0xFF6C757D); // Darker grey
-        displayText = '🚫 Rejected';
-        break;
-      default:
-        bgColor = Colors.grey[200]!;
-        textColor = Colors.grey[700]!;
-        displayText = status.replaceAll('_', ' ').toCapitalized();
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        displayText,
-        style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.w700, color: textColor),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons() {
-    return Wrap(
-      spacing: 15,
-      runSpacing: 15,
-      alignment: WrapAlignment.center,
-      children: [
-        if (_isOwner && _status == 'unclaimed') // Changed
-          ElevatedButton.icon(
-            onPressed: () {
-              _showConfirmationDialog('claimed'); // Changed
-            },
-            icon: const Icon(FontAwesomeIcons.checkCircle, color: kWhite),
-            label: Text(
-              'Mark as Claimed by Owner', // Changed
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 16),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF28A745), // Green
-              foregroundColor: kWhite,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-        if (_reporterTelegram != null && !_isOwner)
-          ElevatedButton.icon(
-            onPressed: () {
-              print('Chat with Reporter: $_reporterTelegram');
-              // Implement URL launcher for Telegram
-            },
-            icon: const Icon(FontAwesomeIcons.telegramPlane, color: kWhite),
-            label: Text(
-              'Chat with Reporter',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 16),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF17A2B8), // Info blue
-              foregroundColor: kWhite,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-      ],
-    );
-  }
-
-  void _showConfirmationDialog(String action) {
-    String message = '';
-    if (action == 'claimed') { // Changed
-      message = "Are you sure you want to mark this found item as 'Claimed by owner'? This action cannot be undone."; // Changed
-    }
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: kLightYellow,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          title: Text(
-            'Are you sure?',
-            style: GoogleFonts.poppins(color: const Color(0xFF333333), fontSize: 24),
-          ),
-          content: Text(
-            message,
-            style: GoogleFonts.poppins(color: const Color(0xFF555555), fontSize: 16),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-              },
-              style: TextButton.styleFrom(
-                backgroundColor: kRedError,
-                foregroundColor: kWhite,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-              ),
-              child: Text('No', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                setState(() {
-                  _status = action; // Simulate status update
-                });
-                print('Confirmed action: $action');
-              },
-              style: TextButton.styleFrom(
-                backgroundColor: kGreenSuccess,
-                foregroundColor: kWhite,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-              ),
-              child: Text('Yes', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-extension StringExtension on String {
-  String toCapitalized() => length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
 }

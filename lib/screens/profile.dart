@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart'; // For image picking
+import 'dart:io'; // For File
+import 'package:path/path.dart' as p; // For path operations
+import 'package:uuid/uuid.dart'; // For generating unique file names
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase types
 import '../ui_constants.dart'; // Import your constants file
+import '../services/supabase_service.dart'; // Import SupabaseService
+import '../widgets/message_modal.dart'; // Import MessageModal
+// Removed: import 'package:flutter/services.dart'; // Not needed for navigation to login screen
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,19 +21,11 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
   bool _removePhoto = false;
-
-  // Placeholder data
-  String _fullName = 'John Doe';
-  String _email = 'john.doe@example.com';
-  String _phoneNumber = '123-456-7890';
-  String _city = 'New York';
-  String _country = 'USA';
-  String _telegramUsername = '@johndoe';
-  String _gender = 'Male';
-  String? _profileImageUrl = 'https://via.placeholder.com/120/8B1E1E/FFFFFF?text=JD'; // Placeholder image
+  bool _isLoading = true; // To manage loading state for fetching/updating profile
 
   // Controllers for editing
   final TextEditingController _fullNameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneNumberController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _countryController = TextEditingController();
@@ -34,19 +34,260 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _confirmNewPasswordController = TextEditingController();
 
+  String _gender = 'Male';
+  String? _profileImageUrl; // Placeholder image URL
+  File? _selectedProfileImageFile; // To hold the newly selected image file
+
+  final _formKey = GlobalKey<FormState>(); // For form validation
+
   @override
   void initState() {
     super.initState();
-    _fullNameController.text = _fullName;
-    _phoneNumberController.text = _phoneNumber;
-    _cityController.text = _city;
-    _countryController.text = _country;
-    _telegramUsernameController.text = _telegramUsername;
+    _fetchUserProfile();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final User? currentUser = supabaseService.currentUser;
+      if (currentUser == null) {
+        MessageModal.show(context, MessageType.error, 'Error', 'User not logged in.');
+        Navigator.pop(context); // Go back if no user
+        return;
+      }
+
+      final Map<String, dynamic> userData = await supabaseService.client
+          .from('profiles')
+          .select()
+          .eq('id', currentUser.id)
+          .single();
+
+      _fullNameController.text = userData['full_name'] ?? '';
+      _emailController.text = userData['email'] ?? '';
+      _phoneNumberController.text = userData['phone_number'] ?? '';
+      _cityController.text = userData['city'] ?? '';
+      _countryController.text = userData['country'] ?? '';
+      _telegramUsernameController.text = userData['telegram_username'] ?? '';
+      _gender = userData['gender'] ?? 'Male';
+      _profileImageUrl = userData['profile_image_url'];
+
+    } catch (e) {
+      debugPrint('Error fetching user profile: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Error',
+        'Failed to load profile details: ${e.toString()}',
+      );
+      Navigator.pop(context); // Go back if profile cannot be loaded
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+
+    if (image != null) {
+      setState(() {
+        _selectedProfileImageFile = File(image.path);
+        _profileImageUrl = null; // Clear network URL if new image is picked
+        _removePhoto = false; // Ensure remove photo is unchecked
+      });
+    }
+  }
+
+  Future<String?> _uploadImage(File imageFile) async {
+    try {
+      final String fileName = '${const Uuid().v4()}${p.extension(imageFile.path)}';
+      final String path = 'profile_images/${supabaseService.currentUser!.id}/$fileName'; // User-specific folder
+
+      await supabaseService.client.storage
+          .from('profile-pictures') // Correctly referencing 'profile-pictures'
+          .upload(path, imageFile,
+              fileOptions: const FileOptions(cacheControl: '3600', upsert: false));
+
+      final String imageUrl = supabaseService.client.storage
+          .from('profile-pictures') // Correctly referencing 'profile-pictures'
+          .getPublicUrl(path);
+
+      return imageUrl;
+    } on StorageException catch (e) {
+      debugPrint('Error uploading profile image to Supabase Storage: ${e.message}');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Upload Failed',
+        'Failed to upload profile image: ${e.message}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint('General image upload error: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Upload Failed',
+        'An unexpected error occurred during image upload: $e',
+      );
+      return null;
+    }
+  }
+
+  Future<void> _updateProfile() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    String? finalProfileImageUrl = _profileImageUrl;
+
+    if (_removePhoto) {
+      finalProfileImageUrl = null; // Set to null if user wants to remove photo
+      // TODO: Implement actual deletion from Supabase Storage here if needed
+      // This would involve calling supabaseService.client.storage.from('profile-pictures').remove(...)
+    } else if (_selectedProfileImageFile != null) {
+      // If a new image is selected, upload it
+      finalProfileImageUrl = await _uploadImage(_selectedProfileImageFile!);
+      if (finalProfileImageUrl == null) {
+        setState(() { _isLoading = false; });
+        return; // Stop if image upload failed
+      }
+    }
+
+    try {
+      final User? currentUser = supabaseService.currentUser;
+      if (currentUser == null) {
+        MessageModal.show(context, MessageType.error, 'Error', 'User not logged in.');
+        setState(() { _isLoading = false; });
+        return;
+      }
+
+      // Update auth.users email if changed
+      if (_emailController.text.trim() != currentUser.email) {
+        await supabaseService.client.auth.updateUser(UserAttributes(
+          email: _emailController.text.trim(),
+        ));
+      }
+
+      // Update password if new password fields are filled
+      if (_newPasswordController.text.isNotEmpty) {
+        if (_newPasswordController.text != _confirmNewPasswordController.text) {
+          MessageModal.show(
+            context,
+            MessageType.error,
+            'Password Mismatch',
+            'New password and confirm new password do not match.',
+          );
+          setState(() { _isLoading = false; });
+          return;
+        }
+        // For security, Supabase requires current password for client-side password change.
+        // If you want to allow password change without current password, you'd need a server-side function.
+        // For now, we'll assume the current password field is used for re-authentication if needed.
+        // A simple client-side password update:
+        await supabaseService.client.auth.updateUser(UserAttributes(
+          password: _newPasswordController.text.trim(),
+        ));
+        MessageModal.show(context, MessageType.success, 'Password Updated', 'Your password has been updated.');
+        _currentPasswordController.clear();
+        _newPasswordController.clear();
+        _confirmNewPasswordController.clear();
+      }
+
+      // Prepare data for profile update
+      final Map<String, dynamic> updates = {
+        'full_name': _fullNameController.text.trim(),
+        'phone_number': _phoneNumberController.text.trim(),
+        'city': _cityController.text.trim(),
+        'country': _countryController.text.trim(),
+        'telegram_username': _telegramUsernameController.text.trim(),
+        'gender': _gender,
+        'profile_image_url': finalProfileImageUrl,
+      };
+
+      // Update profile in Supabase
+      await supabaseService.client
+          .from('profiles')
+          .update(updates)
+          .eq('id', currentUser.id);
+
+      MessageModal.show(
+        context,
+        MessageType.success,
+        'Success!',
+        'Profile updated successfully.',
+      );
+      _fetchUserProfile(); // Re-fetch to update UI with latest data
+      setState(() {
+        _isEditing = false; // Exit editing mode
+      });
+    } on AuthException catch (e) {
+      debugPrint('Supabase Auth Error during profile update: ${e.message}');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Update Failed',
+        'Authentication error: ${e.message}',
+      );
+    } catch (e) {
+      debugPrint('General Profile Update Error: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Update Failed',
+        'An unexpected error occurred: ${e.toString()}',
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _signOut() async {
+    debugPrint('Attempting to sign out from ProfileScreen...'); // Debug print
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      await supabaseService.signOut();
+      debugPrint('Signed out successfully from ProfileScreen. Navigating to LoginScreen...'); // Debug print
+      // Explicitly navigate to the LoginScreen and remove all routes from the stack
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/auth', // Use the named route for AuthScreen (which handles login/signup)
+          (Route<dynamic> route) => false, // This predicate removes all routes below the new one
+        );
+      }
+    } catch (e) {
+      debugPrint('Error signing out from ProfileScreen: $e');
+      MessageModal.show(
+        context,
+        MessageType.error,
+        'Logout Failed',
+        'An error occurred during logout: $e',
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _fullNameController.dispose();
+    _emailController.dispose();
     _phoneNumberController.dispose();
     _cityController.dispose();
     _countryController.dispose();
@@ -57,353 +298,287 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _toggleEditMode() {
-    setState(() {
-      _isEditing = !_isEditing;
-      if (!_isEditing) {
-        // Reset password fields when exiting edit mode
-        _currentPasswordController.clear();
-        _newPasswordController.clear();
-        _confirmNewPasswordController.clear();
-        _removePhoto = false; // Reset remove photo checkbox
-      }
-    });
-  }
-
-  void _saveChanges() {
-    setState(() {
-      _fullName = _fullNameController.text;
-      _phoneNumber = _phoneNumberController.text;
-      _city = _cityController.text;
-      _country = _countryController.text;
-      _telegramUsername = _telegramUsernameController.text;
-
-      if (_removePhoto) {
-        _profileImageUrl = null;
-      }
-      // Password change logic would go here (e.g., validate and call backend)
-      print('Saving changes...');
-      _toggleEditMode();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kPrimaryYellowGreen,
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 30),
-              _isEditing ? _buildEditProfileSection() : _buildViewProfileSection(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'FoundIt',
+      appBar: AppBar(
+        backgroundColor: kDarkRed,
+        title: Text(
+          'My Profile',
           style: GoogleFonts.poppins(
-            fontSize: 32,
-            fontWeight: FontWeight.w800,
-            shadows: [
-              Shadow(
-                color: Colors.black.withOpacity(0.1),
-                offset: const Offset(2, 2),
-                blurRadius: 2,
-              ),
-            ],
+            color: kWhite,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        Row(
-          children: [
-            _buildNavIcon(FontAwesomeIcons.home, 'Home', () => print('Home')),
-            _buildNavIcon(FontAwesomeIcons.tachometerAlt, 'Dashboard', () => print('Dashboard')),
-          ],
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
+          onPressed: () {
+            Navigator.pop(context);
+          },
         ),
-      ],
-    );
-  }
-
-  Widget _buildNavIcon(IconData icon, String tooltip, VoidCallback onPressed) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5.0),
-      child: Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(50),
-          child: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: kWhite,
-              borderRadius: BorderRadius.circular(50),
-              border: Border.all(color: kBlack, width: 2),
-            ),
-            child: Icon(icon, color: kBlack, size: 18),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildViewProfileSection() {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: kLightYellow,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [kDefaultBoxShadow],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Align(
-            alignment: Alignment.topLeft,
-            child: InkWell(
-              onTap: () => print('Back to Home'),
-              borderRadius: BorderRadius.circular(50),
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: kWhite,
-                  borderRadius: BorderRadius.circular(50),
-                  border: Border.all(color: kBlack, width: 2),
-                ),
-                child: const Icon(FontAwesomeIcons.arrowLeft, color: kBlack, size: 18),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          GestureDetector(
-            onTap: () {
-              print('Change profile photo');
-              // Implement image picker logic here
-            },
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: kDarkRed,
-                borderRadius: BorderRadius.circular(60),
-                border: Border.all(color: Colors.grey[400]!, width: 3),
-                image: _profileImageUrl != null
-                    ? DecorationImage(
-                        image: NetworkImage(_profileImageUrl!),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-              ),
-              alignment: Alignment.center,
-              child: _profileImageUrl == null
-                  ? Text(
-                      _fullName.isNotEmpty ? _fullName[0].toUpperCase() : '',
-                      style: GoogleFonts.poppins(color: kWhite, fontSize: 48),
+        actions: [
+          if (!_isEditing)
+            IconButton(
+              icon: const Icon(Icons.edit, color: kYellowEdit),
+              onPressed: () {
+                setState(() {
+                  _isEditing = true;
+                });
+              },
+            )
+          else
+            IconButton(
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
                     )
-                  : null,
+                  : const Icon(Icons.check, color: kWhite),
+              onPressed: _isLoading ? null : _updateProfile,
             ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _fullName,
-            style: GoogleFonts.poppins(fontSize: 28, color: const Color(0xFF333333)),
-          ),
-          Text(
-            _email,
-            style: GoogleFonts.poppins(fontSize: 16, color: const Color(0xFF777777)),
-          ),
-          const SizedBox(height: 30),
-          _buildDetailRow('Phone Number:', _phoneNumber),
-          _buildDetailRow('City:', _city),
-          _buildDetailRow('Country:', _country),
-          _buildDetailRow('Telegram:', _telegramUsername),
-          _buildDetailRow('Gender:', _gender),
-          const SizedBox(height: 30),
-          ElevatedButton(
-            onPressed: _toggleEditMode,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kDarkRed,
-              foregroundColor: kWhite,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              textStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
-              minimumSize: const Size(double.infinity, 50),
-            ),
-            child: const Text('Edit Profile'),
-          ),
+          const SizedBox(width: kSmallSpacing), // Consistent spacing
         ],
       ),
-    );
-  }
+      body: _isLoading && !_isEditing // Show loading only when initially fetching
+          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+          : SingleChildScrollView(
+              padding: kDefaultPadding, // Use kDefaultPadding
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: GestureDetector(
+                        onTap: _isEditing ? _pickImage : null, // Only pick image in edit mode
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 60,
+                              backgroundColor: kLightGrey,
+                              backgroundImage: _selectedProfileImageFile != null
+                                  ? FileImage(_selectedProfileImageFile!) as ImageProvider
+                                  : (_profileImageUrl != null && !_removePhoto
+                                      ? NetworkImage(_profileImageUrl!)
+                                      : null),
+                              child: (_selectedProfileImageFile == null && (_profileImageUrl == null || _removePhoto))
+                                  ? Icon(Icons.person, size: 60, color: kGrey)
+                                  : null,
+                            ),
+                            if (_isEditing)
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(kSmallSpacing / 2),
+                                  decoration: BoxDecoration(
+                                    color: kDarkRed,
+                                    shape: BoxShape.circle,
+                                    boxShadow: const [kButtonBoxShadow],
+                                  ),
+                                  child: const Icon(Icons.camera_alt, color: kWhite, size: 20),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_isEditing)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Checkbox(
+                              value: _removePhoto,
+                              onChanged: (bool? value) {
+                                setState(() {
+                                  _removePhoto = value!;
+                                  if (_removePhoto) {
+                                    _selectedProfileImageFile = null; // Clear selected file if removing
+                                  }
+                                });
+                              },
+                              activeColor: kDarkRed,
+                            ),
+                            Text('Remove Photo', style: GoogleFonts.poppins(color: kBlack)),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: kLargeSpacing), // Consistent spacing
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0),
-      child: Container(
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFFEEEEEE), style: BorderStyle.solid)),
+                    // Personal Information Section
+                    Card(
+                      margin: EdgeInsets.zero, // Card handles its own margin
+                      shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius),
+                      elevation: 3,
+                      child: Padding(
+                        padding: kDefaultPadding,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Personal Information',
+                              style: GoogleFonts.poppins(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: kDarkRed,
+                              ),
+                            ),
+                            const SizedBox(height: kMediumSpacing),
+                            _buildTextField(
+                              _fullNameController,
+                              'Full Name',
+                              editable: _isEditing,
+                              validator: (value) {
+                                if (_isEditing && (value == null || value.isEmpty)) {
+                                  return 'Full Name is required';
+                                }
+                                return null;
+                              },
+                            ),
+                            _buildTextField(_emailController, 'Email', editable: false), // Email not directly editable here for security
+                            _buildTextField(
+                              _phoneNumberController,
+                              'Phone Number',
+                              editable: _isEditing,
+                              keyboardType: TextInputType.phone,
+                              validator: (value) {
+                                if (_isEditing && (value == null || value.isEmpty)) {
+                                  return 'Phone Number is required';
+                                }
+                                if (_isEditing && value != null && !RegExp(r'^[0-9]+$').hasMatch(value)) {
+                                  return 'Enter a valid phone number';
+                                }
+                                return null;
+                              },
+                            ),
+                            _buildFormRow([
+                              _buildTextField(_cityController, 'City', editable: _isEditing),
+                              _buildTextField(_countryController, 'Country', editable: _isEditing),
+                            ]),
+                            _buildTextField(_telegramUsernameController, 'Telegram Username', editable: _isEditing),
+                            _buildGenderRadioButtons(),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: kLargeSpacing), // Spacing between cards
+
+                    // Change Password Section (only visible when editing)
+                    if (_isEditing)
+                      Card(
+                        margin: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius),
+                        elevation: 3,
+                        child: Padding(
+                          padding: kDefaultPadding,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Change Password',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: kDarkRed,
+                                ),
+                              ),
+                              const SizedBox(height: kMediumSpacing),
+                              _buildTextField(_currentPasswordController, 'Current Password', obscureText: true, editable: _isEditing),
+                              _buildTextField(_newPasswordController, 'New Password', obscureText: true, editable: _isEditing, validator: (value) {
+                                if (_newPasswordController.text.isNotEmpty && (value == null || value.length < 6)) {
+                                  return 'Password must be at least 6 characters';
+                                }
+                                return null;
+                              }),
+                              _buildTextField(_confirmNewPasswordController, 'Confirm New Password', obscureText: true, editable: _isEditing, validator: (value) {
+                                if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
+                                  return 'Passwords do not match';
+                                }
+                                return null;
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: kLargeSpacing), // Add spacing if needed at the bottom of the scroll view
+                  ],
+                ),
+              ),
+            ),
+      floatingActionButton: FloatingActionButton.extended( // FloatingActionButton for Logout
+        onPressed: _signOut,
+        backgroundColor: kRedError,
+        foregroundColor: kWhite,
+        icon: const Icon(Icons.logout),
+        label: Text(
+          'Logout',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
         ),
-        padding: const EdgeInsets.only(bottom: 10.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
-            ),
-            Text(
-              value,
-              style: GoogleFonts.poppins(color: const Color(0xFF555555)),
-            ),
-          ],
-        ),
+        shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+        elevation: 5,
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat, // Position at bottom right
     );
   }
 
-  Widget _buildEditProfileSection() {
-    return Container(
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: kLightYellow,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [kDefaultBoxShadow],
+  InputDecoration _inputDecoration(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      filled: true,
+      fillColor: kWhite,
+      border: OutlineInputBorder(
+        borderRadius: kSmallBorderRadius,
+        borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'Edit Profile',
-            style: GoogleFonts.poppins(fontSize: 28, color: const Color(0xFF333333)),
-          ),
-          const SizedBox(height: 25),
-          _buildEditTextField('Full Name', _fullNameController, required: true),
-          _buildEditTextField('Phone Number', _phoneNumberController, keyboardType: TextInputType.phone),
-          _buildEditTextField('City', _cityController),
-          _buildEditTextField('Country', _countryController),
-          _buildEditTextField('Telegram Username', _telegramUsernameController, hintText: '@username'),
-          _buildGenderRadioButtons(),
-          if (_profileImageUrl != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 10.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Checkbox(
-                    value: _removePhoto,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        _removePhoto = value ?? false;
-                      });
-                    },
-                  ),
-                  Text(
-                    'Remove current profile photo',
-                    style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFF555555)),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 30),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Change Password',
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                color: const Color(0xFF333333),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const Divider(color: Color(0xFFEEEEEE), thickness: 1, height: 20),
-          _buildEditTextField('Current Password', _currentPasswordController, obscureText: true),
-          _buildEditTextField('New Password', _newPasswordController, obscureText: true),
-          _buildEditTextField('Confirm New Password', _confirmNewPasswordController, obscureText: true),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: _saveChanges,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kGreenSuccess,
-              foregroundColor: kWhite,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              textStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
-              minimumSize: const Size(double.infinity, 50),
-            ),
-            child: const Text('Save Changes'),
-          ),
-          const SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: _toggleEditMode,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kRedError,
-              foregroundColor: kWhite,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              textStyle: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600),
-              minimumSize: const Size(double.infinity, 50),
-            ),
-            child: const Text('Cancel'),
-          ),
-        ],
+      enabledBorder: OutlineInputBorder(
+        borderRadius: kSmallBorderRadius,
+        borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
       ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: kSmallBorderRadius,
+        borderSide: const BorderSide(color: kDarkRed, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: kSmallBorderRadius,
+        borderSide: const BorderSide(color: kRedError, width: 2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: kSmallBorderRadius,
+        borderSide: const BorderSide(color: kRedError, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
     );
   }
 
-  Widget _buildEditTextField(String label, TextEditingController controller, {bool obscureText = false, String? hintText, TextInputType keyboardType = TextInputType.text, bool required = false}) {
+  Widget _buildTextField(TextEditingController controller, String hintText, {bool obscureText = false, TextInputType keyboardType = TextInputType.text, bool editable = true, String? Function(String?)? validator}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7.5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label + (required ? '*' : ''),
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
-          ),
-          const SizedBox(height: 5),
-          TextField(
-            controller: controller,
-            obscureText: obscureText,
-            keyboardType: keyboardType,
-            decoration: InputDecoration(
-              hintText: hintText,
-              filled: true,
-              fillColor: kWhite,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: kDarkRed),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
+      child: TextFormField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        readOnly: !editable,
+        style: GoogleFonts.poppins(color: editable ? kBlack : kGrey),
+        decoration: _inputDecoration(hintText).copyWith(
+          fillColor: editable ? kWhite : kLightGrey, // Visual feedback for editable state
+        ),
+        validator: validator,
       ),
     );
   }
 
   Widget _buildGenderRadioButtons() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7.5),
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -411,36 +586,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Gender',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: kSmallSpacing),
           Row(
             children: [
               Radio<String>(
                 value: 'Male',
                 groupValue: _gender,
-                onChanged: (String? value) {
+                onChanged: _isEditing ? (String? value) {
                   setState(() {
                     _gender = value!;
                   });
-                },
+                } : null, // Disabled if not editing
                 activeColor: kDarkRed,
               ),
-              Text('Male', style: GoogleFonts.poppins()),
-              const SizedBox(width: 20),
+              Text('Male', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
+              const SizedBox(width: kMediumSpacing),
               Radio<String>(
                 value: 'Female',
                 groupValue: _gender,
-                onChanged: (String? value) {
+                onChanged: _isEditing ? (String? value) {
                   setState(() {
                     _gender = value!;
                   });
-                },
+                } : null, // Disabled if not editing
                 activeColor: kDarkRed,
               ),
-              Text('Female', style: GoogleFonts.poppins()),
+              Text('Female', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
+              const SizedBox(width: kMediumSpacing),
+              Radio<String>(
+                value: 'Other',
+                groupValue: _gender,
+                onChanged: _isEditing ? (String? value) {
+                  setState(() {
+                    _gender = value!;
+                  });
+                } : null, // Disabled if not editing
+                activeColor: kDarkRed,
+              ),
+              Text('Other', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFormRow(List<Widget> children) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children.map((child) => Expanded(child: Padding(
+        padding: const EdgeInsets.only(right: kMediumSpacing),
+        child: child,
+      ))).toList(),
     );
   }
 }
