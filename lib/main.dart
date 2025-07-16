@@ -3,7 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Screens
-import 'screens/auth_screen.dart';
+import 'screens/login.dart'; // Import LoginScreen
+import 'screens/signup.dart'; // Import SignupScreen
+import 'screens/auth_screen.dart'; // Keep this import if AuthScreen is still used for initial routing or other purposes
 import 'screens/homepage_screen.dart';
 import 'screens/profile.dart';
 import 'screens/report_lost_form.dart';
@@ -22,6 +24,9 @@ import 'services/supabase_service.dart';
 // UI Constants
 import 'ui_constants.dart';
 
+// Initialize SupabaseService globally
+final supabaseService = SupabaseService();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -29,78 +34,83 @@ Future<void> main() async {
   // IMPORTANT: Replace with your actual Supabase URL and Anon Key
   // You can find these in your Supabase project settings -> API
   await Supabase.initialize(
-    url: 'https://eplxlegdqzdgorgoaekf.supabase.co', // Replace with your actual Supabase URL
+    url: 'https://eplxlegdqzdgorgoaekf.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwbHhsZWdkcXpkZ29yZ29hZWtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3NzA1MDUsImV4cCI6MjA2NzM0NjUwNX0.gP_6gy6A3jiBj-X0WZ0jncZLyA_TrMzXvoBdk3yhpFM', // Replace with your actual Supabase Anon Key
-    debug: true, // Set to false in production
   );
 
   runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'FoundIt App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.red, // Using a primary swatch for consistency
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-        textTheme: GoogleFonts.poppinsTextTheme( // Apply Poppins to the entire app
-          Theme.of(context).textTheme,
+        // Use the new kBackground as the scaffold background color
+        scaffoldBackgroundColor: kBackground,
+        // Define a consistent color scheme based on the new palette
+        colorScheme: ColorScheme.light(
+          primary: kPrimaryBlack, // Primary color for app bar, etc.
+          onPrimary: kPrimaryWhite, // Text/icons on primary color
+          secondary: kPrimaryYellow, // Accent color
+          onSecondary: kPrimaryBlack, // Text/icons on secondary color
+          surface: kBackground, // Card/surface color
+          onSurface: kPrimaryBlack, // Text/icons on surface
+          background: kBackground, // General background
+          onBackground: kPrimaryBlack, // Text/icons on background
+          error: kRedError, // Error color
+          onError: kPrimaryWhite, // Text/icons on error color
         ),
-        appBarTheme: AppBarTheme(
-          backgroundColor: kDarkRed, // Consistent AppBar background
-          foregroundColor: kWhite, // Consistent AppBar text/icon color
-          titleTextStyle: GoogleFonts.poppins(
-            color: kWhite,
+        // Define text theme using GoogleFonts.poppins and new colors
+        textTheme: TextTheme(
+          displayLarge: GoogleFonts.poppins(
+            fontSize: 36,
             fontWeight: FontWeight.bold,
-            fontSize: 20,
+            color: kPrimaryBlack,
           ),
-        ),
-        cardTheme: CardThemeData( // Corrected: Use CardThemeData
-          elevation: 3,
-          shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius),
-          color: kLightYellow,
-          margin: EdgeInsets.zero, // Cards will handle their own margins
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: kDarkRed,
-            foregroundColor: kWhite,
-            textStyle: kLabelLarge,
-            shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-            padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
-            elevation: 5,
+          headlineMedium: GoogleFonts.poppins(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: kPrimaryBlack,
           ),
-        ),
-        textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: kDarkRed,
-            textStyle: kLabelMedium,
+          titleLarge: GoogleFonts.poppins(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: kPrimaryBlack,
           ),
+          bodyLarge: GoogleFonts.poppins(
+            fontSize: 16,
+            color: kPrimaryBlack,
+          ),
+          bodyMedium: GoogleFonts.poppins(
+            fontSize: 14,
+            color: kGrey,
+          ),
+          labelSmall: GoogleFonts.poppins(
+            fontSize: 12,
+            color: kGrey,
+          ),
+          // Ensure other text styles are defined or use defaults
         ),
+        // Define input decoration theme for consistent text field styling
         inputDecorationTheme: InputDecorationTheme(
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          hintStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIconColor: kGrey,
+          suffixIconColor: kGrey,
+          fillColor: kBackground,
           filled: true,
-          fillColor: kWhite,
-          border: OutlineInputBorder(
-            borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
-          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for Neumorphism
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kDarkRed, width: 2),
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -110,29 +120,30 @@ class _MyAppState extends State<MyApp> {
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: kRedError, width: 2),
           ),
-          hintStyle: GoogleFonts.poppins(color: kGrey),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
+        // Button themes (optional, as most buttons are custom Neumorphic)
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: kPrimaryYellow, // Default text button color
+            textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kPrimaryBlack, // Default elevated button color
+            foregroundColor: kPrimaryWhite,
+            shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+            textStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+            padding: kMediumPadding,
+          ),
+        ),
       ),
-      home: StreamBuilder<AuthState>(
-        stream: supabaseService.authStateChanges,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              backgroundColor: kPrimaryYellowGreen,
-              body: Center(
-                child: CircularProgressIndicator(color: kDarkRed),
-              ),
-            );
-          } else if (snapshot.hasData && snapshot.data!.event == AuthChangeEvent.signedIn) {
-            return const HomepageScreen();
-          } else {
-            return const AuthScreen();
-          }
-        },
-      ),
+      initialRoute: '/auth', // Set initial route to AuthScreen
       routes: {
         '/auth': (context) => const AuthScreen(),
+        '/login': (context) => const LoginScreen(),
+        '/signup': (context) => const SignupScreen(),
         '/homepage': (context) => const HomepageScreen(),
         '/profile': (context) => const ProfileScreen(),
         '/report_lost': (context) => const ReportLostFormScreen(),

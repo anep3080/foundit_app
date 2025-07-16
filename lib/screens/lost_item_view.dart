@@ -41,24 +41,17 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
     final User? currentUser = supabaseService.currentUser;
     if (currentUser != null) {
       try {
-        final Map<String, dynamic> profile = await supabaseService.client
+        final profile = await supabaseService.client
             .from('profiles')
-            .select('user_type')
+            .select('user_type, telegram_username')
             .eq('id', currentUser.id)
             .single();
         setState(() {
           _currentUserUserType = profile['user_type'];
         });
       } catch (e) {
-        debugPrint('Error fetching user type: $e');
-        setState(() {
-          _currentUserUserType = 'user'; // Default to 'user' on error
-        });
+        debugPrint('Error fetching current user type: $e');
       }
-    } else {
-      setState(() {
-        _currentUserUserType = 'guest'; // Guest if not logged in
-      });
     }
   }
 
@@ -67,60 +60,36 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
       _isLoading = true;
     });
     try {
-      final Map<String, dynamic> response = await supabaseService.client
+      // Corrected the foreign key reference to 'reporter_id' based on old working code
+      final response = await supabaseService.client
           .from('lost_items')
-          .select('*, reporter_id(id, telegram_username)') // Explicitly select 'id' from reporter_id
+          .select('''
+            *,
+            profiles!reporter_id(telegram_username)
+          ''')
           .eq('id', widget.itemId)
-          .single();
+          .maybeSingle(); // Use maybeSingle()
 
       setState(() {
-        _itemData = response;
-        final User? currentUser = supabaseService.currentUser;
+        _itemData = response; // response will be null if no record found
+        if (_itemData != null) {
+          // Access telegram_username from the nested 'profiles' map
+          _reporterTelegramUsername = (_itemData!['profiles'] as Map<String, dynamic>?)?['telegram_username'];
+          _isCurrentUserReporter = supabaseService.currentUser?.id == _itemData!['user_id'];
 
-        debugPrint('Fetched item data: $_itemData'); // Debug print
-        debugPrint('Current User ID: ${currentUser?.id}'); // Debug print
-        debugPrint('Type of response[\'reporter_id\']: ${response['reporter_id'].runtimeType}'); // Added debug
+          // Add debug prints here
+          debugPrint('LostItemView - _isCurrentUserReporter: $_isCurrentUserReporter');
+          debugPrint('LostItemView - Item Status: ${_itemData!['status']}');
+          debugPrint('LostItemView - Current User ID: ${supabaseService.currentUser?.id}');
+          debugPrint('LostItemView - Item Reporter ID (user_id): ${_itemData!['user_id']}');
 
-        if (currentUser != null && _itemData!['reporter_id'] != null) {
-          String? itemReporterId;
-          String? fetchedTelegramUsername;
-
-          if (response['reporter_id'] is Map) {
-            final Map reporterMap = response['reporter_id'];
-            itemReporterId = reporterMap['id'] as String?; // This should now correctly get the ID
-            fetchedTelegramUsername = reporterMap['telegram_username'] as String?;
-          } else if (response['reporter_id'] is String) {
-            // This path is less likely if the foreign key is correctly set up
-            itemReporterId = response['reporter_id'] as String?;
-            fetchedTelegramUsername = null; // Cannot get telegram username without successful join
-          } else {
-            // Fallback for any other unexpected type or null
-            itemReporterId = null;
-            fetchedTelegramUsername = null;
-          }
-
-          _reporterTelegramUsername = fetchedTelegramUsername;
-          _isCurrentUserReporter = (itemReporterId != null && currentUser != null && itemReporterId == currentUser.id);
-
-          debugPrint('Item Reporter ID: $itemReporterId'); // Debug print
-          debugPrint('Is Current User Reporter: $_isCurrentUserReporter'); // Debug print
-          debugPrint('Reporter Telegram Username: $_reporterTelegramUsername'); // Debug print
-
-        } else {
-          _isCurrentUserReporter = false;
-          _reporterTelegramUsername = null;
-          debugPrint('No current user or reporter_id is null in item data.');
         }
       });
     } catch (e) {
       debugPrint('Error fetching lost item details: $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Error',
-        'Failed to load item details: ${e.toString()}',
-      );
-      // Removed Navigator.pop(context); here to keep the "Item not found" message visible
+      // Log the specific error type and message for better debugging
+      debugPrint('Supabase Query Error in LostItemViewScreen: ${e.runtimeType} - ${e.toString()}');
+      MessageModal.show(context, MessageType.error, 'Error', 'Failed to load item details.');
     } finally {
       setState(() {
         _isLoading = false;
@@ -129,33 +98,20 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
   }
 
   Future<void> _updateItemStatus(String newStatus) async {
-    if (_itemData == null) return;
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       await supabaseService.client
           .from('lost_items')
           .update({'status': newStatus})
           .eq('id', widget.itemId);
 
-      MessageModal.show(
-        context,
-        MessageType.success,
-        'Success!',
-        'Item status updated to ${capitalizeFirstLetter(newStatus)}.',
-      );
-      _fetchItemDetails(); // Refresh details after update
+      MessageModal.show(context, MessageType.success, 'Success', 'Item status updated to $newStatus.');
+      _fetchItemDetails(); // Refresh details
     } catch (e) {
       debugPrint('Error updating item status: $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Update Failed',
-        'Failed to update item status: ${e.toString()}',
-      );
+      MessageModal.show(context, MessageType.error, 'Error', 'Failed to update item status.');
     } finally {
       setState(() {
         _isLoading = false;
@@ -163,87 +119,42 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
     }
   }
 
-  // Function to launch Telegram
   Future<void> _launchTelegram(String username) async {
-    final Uri telegramUrl = Uri.parse('https://t.me/$username');
-    if (await canLaunchUrl(telegramUrl)) {
-      await launchUrl(telegramUrl);
+    final url = 'https://t.me/$username';
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
     } else {
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Error',
-        'Could not launch Telegram. Make sure the app is installed or the username is correct.',
-      );
+      MessageModal.show(context, MessageType.error, 'Error', 'Could not launch Telegram. Make sure the app is installed.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Building LostItemViewScreen. _isLoading: $_isLoading'); // Added debug print
-
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
-          _itemData?['item_name'] ?? 'Lost Item Details',
+          'Lost Item Details',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        actions: [
-          if (_itemData != null && _currentUserUserType == 'admin')
-            PopupMenuButton<String>(
-              onSelected: (String result) {
-                _updateItemStatus(result);
-              },
-              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                PopupMenuItem<String>(
-                  value: 'found',
-                  enabled: _itemData!['status'] != 'found',
-                  child: Text('Mark as Found', style: GoogleFonts.poppins()),
-                ),
-                PopupMenuItem<String>(
-                  value: 'claimed',
-                  enabled: _itemData!['status'] != 'claimed',
-                  child: Text('Mark as Claimed', style: GoogleFonts.poppins()),
-                ),
-                PopupMenuItem<String>(
-                  value: 'not found',
-                  enabled: _itemData!['status'] != 'not found',
-                  child: Text('Mark as Not Found', style: GoogleFonts.poppins()),
-                ),
-                PopupMenuItem<String>(
-                  value: 'pending_approval',
-                  enabled: _itemData!['status'] != 'pending_approval',
-                  child: Text('Mark as Pending Approval', style: GoogleFonts.poppins()),
-                ),
-                PopupMenuItem<String>(
-                  value: 'rejected',
-                  enabled: _itemData!['status'] != 'rejected',
-                  child: Text('Mark as Rejected', style: GoogleFonts.poppins()),
-                ),
-              ],
-              icon: const Icon(Icons.more_vert, color: kWhite),
-            ),
-        ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
-          : _itemData == null
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow))
+          : _itemData == null // Check if _itemData is null (meaning no record found)
               ? Center(
                   child: Text(
-                    'Item not found or an error occurred.',
-                    style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
+                    'Item not found or no longer exists.', // More specific message
+                    style: GoogleFonts.poppins(color: kGrey),
                   ),
                 )
               : SingleChildScrollView(
@@ -251,100 +162,143 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Center(
-                        child: Container(
-                          height: 250,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: kLightGrey,
-                            borderRadius: kDefaultBorderRadius,
-                            image: _itemData!['image_url'] != null && _itemData!['image_url'].isNotEmpty
-                                ? DecorationImage(
-                                    image: NetworkImage(_itemData!['image_url']),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
-                          ),
-                          child: _itemData!['image_url'] == null || _itemData!['image_url'].isEmpty
-                              ? Center(
-                                  child: Icon(
-                                    Icons.image_not_supported,
-                                    size: 80,
-                                    color: kGrey,
-                                  ),
+                      // Item Image
+                      Container(
+                        height: 250,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: kLightGrey,
+                          borderRadius: kDefaultBorderRadius,
+                          boxShadow: [
+                            kNeumorphicShadowDark,
+                            kNeumorphicShadowLight,
+                          ],
+                          image: _itemData!['image_url'] != null && _itemData!['image_url'].isNotEmpty
+                              ? DecorationImage(
+                                  image: NetworkImage(_itemData!['image_url']),
+                                  fit: BoxFit.cover,
                                 )
                               : null,
                         ),
+                        child: _itemData!['image_url'] == null || _itemData!['image_url'].isEmpty
+                            ? Icon(
+                                Icons.image_not_supported,
+                                color: kGrey,
+                                size: 80,
+                              )
+                            : null,
                       ),
                       const SizedBox(height: kLargeSpacing),
+                      // Item Name
                       Text(
                         _itemData!['item_name'] ?? 'N/A',
                         style: GoogleFonts.poppins(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: kDarkRed,
+                          color: kPrimaryBlack,
                         ),
                       ),
                       const SizedBox(height: kMediumSpacing),
-                      _buildDetailRow(
-                          'Description', _itemData!['description'] ?? 'N/A'),
-                      _buildDetailRow('Date Lost', _itemData!['date_lost'] ?? 'N/A'),
-                      _buildDetailRow(
-                          'Lost Location', _itemData!['lost_location'] ?? 'N/A'),
-                      _buildDetailRow(
-                          'Category', capitalizeFirstLetter(_itemData!['category'] ?? 'N/A')),
-                      _buildDetailRow(
-                          'Status', capitalizeFirstLetter(_itemData!['status'] ?? 'N/A'),
-                          isStatus: true),
-                      const SizedBox(height: kLargeSpacing),
-
-                      // Conditional buttons based on user type and item status
-                      Visibility(
-                        visible: _itemData!['status'].toString().toLowerCase().trim() == 'not found' && !_isLoading,
+                      // Details Section
+                      Container(
+                        padding: kMediumPadding,
+                        decoration: BoxDecoration(
+                          color: kBackground,
+                          borderRadius: kDefaultBorderRadius,
+                          boxShadow: [
+                            kNeumorphicShadowDark,
+                            kNeumorphicShadowLight,
+                          ],
+                        ),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            if (_isCurrentUserReporter)
-                              Center(
-                                child: ElevatedButton(
-                                  onPressed: () => _updateItemStatus('found'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: kGreenSuccess,
-                                    foregroundColor: kWhite,
-                                    padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
-                                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-                                    elevation: 5,
-                                  ),
-                                  child: Text('Mark as Found', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                                ),
-                              )
-                            else if (_reporterTelegramUsername != null && _reporterTelegramUsername!.isNotEmpty)
-                              Center(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _launchTelegram(_reporterTelegramUsername!),
-                                  icon: const Icon(Icons.chat),
-                                  label: Text('Chat with Reporter', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: kBlueInfo,
-                                    foregroundColor: kWhite,
-                                    padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
-                                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-                                    elevation: 5,
-                                  ),
-                                ),
-                              ),
+                            _buildDetailRow(label: 'Category', value: capitalizeFirstLetter(_itemData!['category'] ?? 'N/A')),
+                            _buildDetailRow(label: 'Status', value: capitalizeFirstLetter(_itemData!['status'] ?? 'Not Found'), isStatus: true),
+                            _buildDetailRow(label: 'Description', value: _itemData!['description'] ?? 'N/A'),
+                            _buildDetailRow(label: 'Lost Location', value: _itemData!['lost_location'] ?? 'N/A'),
+                            _buildDetailRow(label: 'Date Lost', value: _itemData!['date_lost'] ?? 'N/A'),
+                            _buildDetailRow(label: 'Reported By', value: _itemData!['reporter_name'] ?? 'Anonymous'),
+                            // Access telegram_username from the nested 'profiles' map
+                            if (_reporterTelegramUsername != null && _reporterTelegramUsername!.isNotEmpty)
+                              _buildDetailRow(label: 'Reporter Telegram', value: '@$_reporterTelegramUsername'),
                           ],
                         ),
                       ),
+                      const SizedBox(height: kLargeSpacing),
+
+                      // Action Buttons (Conditional Visibility)
+                      // Admin actions
+                      if (_currentUserUserType == 'admin' && _itemData!['status'] == 'pending_approval') ...[
+                        _buildActionButton(
+                          text: 'Approve Claim',
+                          color: kPrimaryGreen,
+                          onPressed: () => _updateItemStatus('claimed'),
+                        ),
+                        const SizedBox(height: kMediumSpacing),
+                        _buildActionButton(
+                          text: 'Reject Claim',
+                          color: kRedError,
+                          onPressed: () => _updateItemStatus('not found'), // Revert to not found
+                        ),
+                      ],
+
+                      // Reporter actions
+                      Visibility(
+                        visible: _isCurrentUserReporter && _itemData!['status'] == 'not found' && !_isLoading,
+                        child: Center(
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : () => _updateItemStatus('found'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: kPrimaryYellow,
+                              foregroundColor: kPrimaryWhite,
+                              padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                              shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                              elevation: 5,
+                            ),
+                            child: Text('Mark as Found', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ),
+
+                      // Other user actions (Chat with Reporter)
+                      Visibility(
+                        visible: !_isCurrentUserReporter && _reporterTelegramUsername != null && _reporterTelegramUsername!.isNotEmpty && !_isLoading,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: kMediumSpacing),
+                            Center(
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoading ? null : () => _launchTelegram(_reporterTelegramUsername!),
+                                icon: const Icon(Icons.chat),
+                                label: Text('Chat with Reporter', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: kBlueInfo, // Use a suitable color for chat
+                                  foregroundColor: kPrimaryWhite,
+                                  padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                                  shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                                  elevation: 5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Status message for found/claimed items
                       if (_itemData!['status'].toString().toLowerCase().trim() == 'found' || _itemData!['status'].toString().toLowerCase().trim() == 'claimed')
                         Center(
-                          child: Text(
-                            'This item has been ${_itemData!['status']}.',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: _itemData!['status'].toString().toLowerCase().trim() == 'found' ? kYellowEdit : kGreenSuccess,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: kMediumSpacing),
+                            child: Text(
+                              'This item has been ${_itemData!['status']}.',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: _itemData!['status'].toString().toLowerCase().trim() == 'found' ? kPrimaryYellow : kPrimaryGreen,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
                     ],
@@ -353,7 +307,11 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {bool isStatus = false}) {
+  Widget _buildDetailRow({
+    required String label,
+    required String value,
+    bool isStatus = false,
+  }) {
     Color? valueColor;
     if (isStatus) {
       switch (value.toLowerCase().trim()) {
@@ -361,19 +319,19 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
           valueColor = kRedError;
           break;
         case 'found':
-          valueColor = kYellowEdit;
+          valueColor = kPrimaryYellow; // Use yellow for 'Found' status in Lost items
           break;
         case 'claimed':
-          valueColor = kGreenSuccess;
+          valueColor = kPrimaryGreen; // Use green for claimed
           break;
-        case 'pending_approval':
+        case 'pending approval': // Changed from pending_approval for display
           valueColor = kGrey;
           break;
         case 'rejected':
-          valueColor = kBlack;
+          valueColor = kPrimaryBlack; // Use black for rejected
           break;
         default:
-          valueColor = kBlack;
+          valueColor = kPrimaryBlack;
       }
     }
 
@@ -388,7 +346,7 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
               '$label:',
               style: GoogleFonts.poppins(
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF333333),
+                color: kPrimaryBlack, // Label color
                 fontSize: 16,
               ),
             ),
@@ -397,12 +355,67 @@ class _LostItemViewScreenState extends State<LostItemViewScreen> {
             child: Text(
               value,
               style: GoogleFonts.poppins(
-                color: valueColor ?? kBlack,
+                color: valueColor ?? kPrimaryBlack, // Value color
                 fontSize: 16,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String text,
+    required Color color,
+    required VoidCallback? onPressed,
+  }) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Apply inner shadow on press down for debossed effect
+          });
+        }
+      },
+      onTapUp: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow on press up
+          });
+        }
+      },
+      onTapCancel: () {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow if tap is cancelled
+          });
+        }
+      },
+      onTap: onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: kMediumPadding,
+        decoration: BoxDecoration(
+          color: color, // Use the passed color
+          borderRadius: kSmallBorderRadius,
+          boxShadow: onPressed != null
+              ? [
+                  kNeumorphicShadowDark,
+                  kNeumorphicShadowLight,
+                ]
+              : [], // No shadow if disabled
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: GoogleFonts.poppins(
+              color: kPrimaryWhite,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       ),
     );
   }

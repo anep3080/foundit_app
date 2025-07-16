@@ -26,7 +26,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
     'Wallets', 'Books', 'Other'
   ];
   final List<String> _statuses = [
-    'All', 'Unclaimed', 'Claimed', 'Pending Approval', 'Rejected'
+    'All', 'Unclaimed', 'Claimed'
   ];
 
   @override
@@ -52,42 +52,38 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
     _fetchAllFoundItems(); // Re-fetch items with new search query
   }
 
-  void _onFilterChanged() {
-    _fetchAllFoundItems(); // Re-fetch with new filter selections
-  }
-
   Future<void> _fetchAllFoundItems() async {
     setState(() {
       _isLoading = true;
     });
     try {
-      var query = supabaseService.client.from('found_items').select();
+      // Start with the base query
+      var query = supabaseService.client
+          .from('found_items')
+          .select('*');
 
-      // Apply search filter
+      // Apply filters conditionally
       if (_searchQuery.isNotEmpty) {
         query = query.ilike('item_name', '%$_searchQuery%');
       }
 
-      // Apply category filter
-      if (_selectedCategory != null && _selectedCategory != 'All') {
-        query = query.eq('category', _selectedCategory!);
+      if (_selectedCategory != 'All' && _selectedCategory != null) {
+        query = query.eq('category', _selectedCategory!.toLowerCase());
       }
 
-      // Apply status filter
-      if (_selectedStatus != null && _selectedStatus != 'All') {
-        final String normalizedStatus = _selectedStatus!.toLowerCase().replaceAll(' ', '_');
-        query = query.eq('status', normalizedStatus);
+      if (_selectedStatus != 'All' && _selectedStatus != null) {
+        // Supabase status values are typically lowercase with underscores
+        query = query.eq('status', _selectedStatus!.toLowerCase().replaceAll(' ', '_'));
       }
 
-      final List<Map<String, dynamic>> response = await query
-          .order('created_at', ascending: false); // Order by most recent
+      // Finally, apply ordering
+      final response = await query.order('date_found', ascending: false);
 
       setState(() {
-        _foundItems = response;
+        _foundItems = List<Map<String, dynamic>>.from(response);
       });
     } catch (e) {
       debugPrint('Error fetching all found items: $e');
-      // Optionally show a message modal here
     } finally {
       setState(() {
         _isLoading = false;
@@ -98,210 +94,211 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
           'All Found Items',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Column( // Use Column to place search bar above the list
-        children: [
-          Padding(
-            padding: kDefaultPadding.copyWith(bottom: 0), // Adjust padding
-            child: _buildSearchBar(),
-          ),
-          const SizedBox(height: kMediumSpacing),
-          Padding(
-            padding: kHorizontalPadding, // Apply horizontal padding for filter bar
-            child: _buildFilterBar(), // New filter bar
-          ),
-          const SizedBox(height: kMediumSpacing),
-          Expanded( // Expanded to fill remaining space
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: kDarkRed))
-                : RefreshIndicator(
-                    onRefresh: _fetchAllFoundItems,
-                    child: _foundItems.isEmpty
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow))
+          : RefreshIndicator(
+              onRefresh: _fetchAllFoundItems,
+              color: kPrimaryYellow,
+              child: SingleChildScrollView(
+                padding: kDefaultPadding,
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSearchBar(),
+                    const SizedBox(height: kMediumSpacing),
+                    _buildFilterDropdowns(),
+                    const SizedBox(height: kLargeSpacing),
+                    _foundItems.isEmpty
                         ? Center(
-                            child: SingleChildScrollView( // Allow scrolling for empty state
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: kDefaultPadding,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.search_off,
-                                    size: 60,
-                                    color: kGrey,
-                                  ),
-                                  const SizedBox(height: kSmallSpacing),
-                                  Text(
-                                    _searchQuery.isNotEmpty || _selectedCategory != 'All' || _selectedStatus != 'All'
-                                        ? 'No matching found items found.'
-                                        : 'No found items found.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.poppins(color: kGrey, fontSize: kBodySmall.fontSize),
-                                  ),
-                                ],
+                            child: Padding(
+                              padding: const EdgeInsets.all(kLargeSpacing),
+                              child: Text(
+                                'No found items matching your criteria.',
+                                style: GoogleFonts.poppins(color: kGrey),
                               ),
                             ),
                           )
-                        : ListView.builder( // Switched to ListView.builder to allow for consistent card layout with status badge
-                            padding: const EdgeInsets.all(16.0),
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
                             itemCount: _foundItems.length,
                             itemBuilder: (context, index) {
                               final item = _foundItems[index];
                               return _buildItemCard(
-                                context,
-                                item['id'] as String, // Explicitly cast to String
+                                item['id'],
+                                item['image_url'],
                                 item['item_name'],
                                 item['description'],
-                                item['image_url'],
                                 item['status'], // Pass status for badge
                               );
                             },
                           ),
-                  ),
-          ),
-        ],
-      ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
-        color: kWhite,
+        color: kBackground,
         borderRadius: kSmallBorderRadius,
-        boxShadow: const [kDefaultBoxShadow],
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
       ),
       child: TextField(
         controller: _searchController,
-        style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
         decoration: InputDecoration(
-          hintText: 'Search for found items...',
-          hintStyle: GoogleFonts.poppins(color: kGrey, fontSize: kBodyMedium.fontSize),
+          hintText: 'Search items...',
+          hintStyle: GoogleFonts.poppins(color: kGrey),
           prefixIcon: Icon(Icons.search, color: kGrey),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
                   icon: Icon(Icons.clear, color: kGrey),
                   onPressed: () {
                     _searchController.clear();
-                    setState(() {
-                      _searchQuery = '';
-                    });
-                    _fetchAllFoundItems();
+                    _fetchAllFoundItems(); // Clear search and re-fetch all items
                   },
                 )
               : null,
-          border: OutlineInputBorder(
+          enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
             borderSide: BorderSide.none,
           ),
-          filled: true,
-          fillColor: Colors.transparent,
-          contentPadding: kSmallPadding,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
       ),
     );
   }
 
-  Widget _buildFilterBar() {
+  Widget _buildFilterDropdowns() {
     return Row(
       children: [
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
-            decoration: BoxDecoration(
-              color: kWhite,
-              borderRadius: kSmallBorderRadius,
-              boxShadow: const [kDefaultBoxShadow],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedCategory,
-                icon: const Icon(Icons.arrow_drop_down, color: kGrey),
-                style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedCategory = newValue;
-                  });
-                  _onFilterChanged();
-                },
-                items: _categories.map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-              ),
-            ),
+          child: _buildDropdown(
+            value: _selectedCategory,
+            items: _categories,
+            labelText: 'Category',
+            icon: Icons.category,
+            onChanged: (newValue) {
+              setState(() {
+                _selectedCategory = newValue;
+              });
+              _fetchAllFoundItems();
+            },
           ),
         ),
         const SizedBox(width: kMediumSpacing),
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
-            decoration: BoxDecoration(
-              color: kWhite,
-              borderRadius: kSmallBorderRadius,
-              boxShadow: const [kDefaultBoxShadow],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedStatus,
-                icon: const Icon(Icons.arrow_drop_down, color: kGrey),
-                style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedStatus = newValue;
-                  });
-                  _onFilterChanged();
-                },
-                items: _statuses.map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-              ),
-            ),
+          child: _buildDropdown(
+            value: _selectedStatus,
+            items: _statuses,
+            labelText: 'Status',
+            icon: Icons.info_outline,
+            onChanged: (newValue) {
+              setState(() {
+                _selectedStatus = newValue;
+              });
+              _fetchAllFoundItems();
+            },
           ),
         ),
       ],
     );
   }
 
-  Widget _buildItemCard(
-    BuildContext context,
-    String itemId,
-    String itemName,
-    String description,
-    String? imageUrl,
-    String status, // Now receiving status
-  ) {
+  Widget _buildDropdown({
+    required String? value,
+    required List<String> items,
+    required String labelText,
+    required IconData icon,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        decoration: InputDecoration(
+          labelText: labelText,
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(icon, color: kGrey),
+          fillColor: kBackground,
+          filled: true,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+        dropdownColor: kBackground,
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        icon: Icon(Icons.arrow_drop_down, color: kGrey),
+        items: items.map((String item) {
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text(item, style: GoogleFonts.poppins(color: kPrimaryBlack)),
+          );
+        }).toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _buildItemCard(String id, String? imageUrl, String title, String description, String status) {
     return GestureDetector(
       onTap: () {
-        Navigator.pushNamed(context, '/found_item_view', arguments: itemId);
+        Navigator.pushNamed(context, '/found_item_view', arguments: id);
       },
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 8.0),
-        shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius),
-        elevation: 3,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: kSmallSpacing),
+        decoration: BoxDecoration(
+          color: kBackground,
+          borderRadius: kDefaultBorderRadius,
+          boxShadow: [
+            kNeumorphicShadowDark,
+            kNeumorphicShadowLight,
+          ],
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: kMediumPadding,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -319,45 +316,37 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
                       : null,
                 ),
                 child: imageUrl == null || imageUrl.isEmpty
-                    ? Center(
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 40,
-                          color: kGrey,
-                        ),
+                    ? Icon(
+                        Icons.search,
+                        color: kGrey,
+                        size: 40,
                       )
                     : null,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kMediumSpacing),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      itemName,
+                      title,
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
-                        color: kDarkRed,
+                        color: kPrimaryBlack,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: kExtraSmallSpacing),
                     Text(
                       description,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: kGrey,
-                      ),
+                      style: GoogleFonts.poppins(color: kGrey, fontSize: 14),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: _buildStatusBadge(status), // Use status for badge
-                    ),
+                    const SizedBox(height: kExtraSmallSpacing),
+                    _buildStatusBadge(status), // Pass the status for badge
                   ],
                 ),
               ),
@@ -372,13 +361,13 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
     Color statusColor;
     String statusText;
 
-    switch (status.toLowerCase().trim()) { // Ensure consistent comparison
+    switch (status.toLowerCase().trim()) {
       case 'unclaimed':
         statusColor = kRedError;
         statusText = 'Unclaimed';
         break;
       case 'claimed':
-        statusColor = kGreenSuccess;
+        statusColor = kPrimaryGreen;
         statusText = 'Claimed';
         break;
       case 'pending_approval':
@@ -386,7 +375,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
         statusText = 'Pending Approval';
         break;
       case 'rejected':
-        statusColor = kBlack;
+        statusColor = kPrimaryBlack;
         statusText = 'Rejected';
         break;
       default:
@@ -401,17 +390,13 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
         borderRadius: kCircularBorderRadius,
       ),
       child: Text(
-        statusText, // No need to capitalize again, already handled
+        statusText,
         style: GoogleFonts.poppins(
-          color: kWhite,
+          color: kPrimaryWhite,
           fontWeight: FontWeight.bold,
           fontSize: 12,
         ),
       ),
     );
   }
-}
-
-extension StringExtension on String {
-  String toCapitalized() => length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
 }

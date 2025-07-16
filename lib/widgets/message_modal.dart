@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../ui_constants.dart'; // Import your constants file
 
-enum MessageType { success, error }
+enum MessageType { success, error, info } // Added info type
 
 class MessageModal extends StatelessWidget {
   final MessageType type;
@@ -18,13 +18,30 @@ class MessageModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color borderColor = type == MessageType.success ? kGreenSuccess : kRedError;
-    Color iconColor = type == MessageType.success ? kGreenSuccess : kRedError;
-    IconData icon = type == MessageType.success ? Icons.check_circle : Icons.cancel;
+    Color borderColor;
+    Color iconColor;
+    IconData icon;
+
+    switch (type) {
+      case MessageType.success:
+        borderColor = kPrimaryGreen;
+        iconColor = kPrimaryGreen;
+        icon = Icons.check_circle;
+        break;
+      case MessageType.error:
+        borderColor = kRedError;
+        iconColor = kRedError;
+        icon = Icons.cancel;
+        break;
+      case MessageType.info: // New info type styling
+        borderColor = kPrimaryYellow;
+        iconColor = kPrimaryYellow;
+        icon = Icons.info;
+        break;
+    }
 
     return AlertDialog(
-      backgroundColor: kWhite,
-      // Use kDefaultBorderRadius for consistency
+      backgroundColor: kPrimaryWhite, // White background for modal
       shape: RoundedRectangleBorder(
         borderRadius: kDefaultBorderRadius,
         side: BorderSide(color: borderColor, width: 2),
@@ -37,26 +54,26 @@ class MessageModal extends StatelessWidget {
             alignment: Alignment.topRight,
             child: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: const Icon(Icons.close, color: kGrey, size: 28), // Use kGrey for consistency
+              child: const Icon(Icons.close, color: kGrey, size: 28),
             ),
           ),
           Icon(icon, color: iconColor, size: 48),
-          const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
+          const SizedBox(height: kMediumSpacing),
           Text(
             title,
             style: GoogleFonts.poppins(
               fontSize: 24,
-              color: const Color(0xFF333333),
+              color: kPrimaryBlack, // Black for title
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
+          const SizedBox(height: kMediumSpacing),
           Text(
             message,
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(
               fontSize: 16,
-              color: const Color(0xFF555555),
+              color: kGrey, // Grey for message body
             ),
           ),
         ],
@@ -69,7 +86,11 @@ class MessageModal extends StatelessWidget {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return MessageModal(type: type, title: title, message: message);
+        return MessageModal(
+          type: type,
+          title: title,
+          message: message,
+        );
       },
     );
   }

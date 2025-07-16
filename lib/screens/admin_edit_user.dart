@@ -26,125 +26,14 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
   final TextEditingController _newPasswordController = TextEditingController(); // For admin-initiated password reset
   final TextEditingController _confirmNewPasswordController = TextEditingController();
 
-  String _gender = 'Male';
-  String _userType = 'user'; // 'user' or 'admin'
+  String _gender = 'Male'; // Default gender
+  String _userType = 'user'; // Default user type
   bool _isLoading = true; // To manage loading state for fetching/updating user
-  final _formKey = GlobalKey<FormState>(); // For form validation
 
   @override
   void initState() {
     super.initState();
     _fetchUserDetails();
-  }
-
-  Future<void> _fetchUserDetails() async {
-    setState(() {
-      _isLoading = true;
-    });
-    try {
-      final Map<String, dynamic> userData = await supabaseService.client
-          .from('profiles')
-          .select()
-          .eq('id', widget.userId)
-          .single();
-
-      _fullNameController.text = userData['full_name'] ?? '';
-      _emailController.text = userData['email'] ?? '';
-      _phoneNumberController.text = userData['phone_number'] ?? '';
-      _cityController.text = userData['city'] ?? '';
-      _countryController.text = userData['country'] ?? '';
-      _telegramUsernameController.text = userData['telegram_username'] ?? '';
-      _gender = userData['gender'] ?? 'Male';
-      _userType = userData['user_type'] ?? 'user';
-
-    } catch (e) {
-      debugPrint('Error fetching user details for admin edit: $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Error',
-        'Failed to load user details: $e',
-      );
-      Navigator.pop(context); // Go back if user cannot be loaded
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _updateUser() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // Update password if new password fields are filled
-      if (_newPasswordController.text.isNotEmpty) {
-        if (_newPasswordController.text != _confirmNewPasswordController.text) {
-          MessageModal.show(
-            context,
-            MessageType.error,
-            'Password Mismatch',
-            'New password and confirm new password do not match.',
-          );
-          setState(() { _isLoading = false; });
-          return;
-        }
-        // Admin initiating password update for another user.
-        // Supabase's client.auth.updateUser only updates the *current* user.
-        // For admin-initiated password resets, you would typically use a Supabase Function
-        // or a server-side API that calls the Admin API.
-        // For this example, we'll simulate it by showing a success message,
-        // but a direct client-side update of another user's password is not possible.
-        // If you need this, you'll need to implement a Supabase Function.
-        MessageModal.show(context, MessageType.success, 'Password Reset Initiated',
-            'Password reset for this user would be handled via an admin API or function (not directly supported client-side).');
-        _newPasswordController.clear();
-        _confirmNewPasswordController.clear();
-      }
-
-      // Prepare data for profile update
-      final Map<String, dynamic> updates = {
-        'full_name': _fullNameController.text.trim(),
-        'phone_number': _phoneNumberController.text.trim(),
-        'city': _cityController.text.trim(),
-        'country': _countryController.text.trim(),
-        'telegram_username': _telegramUsernameController.text.trim(),
-        'gender': _gender,
-        'user_type': _userType,
-      };
-
-      // Update profile in Supabase
-      await supabaseService.client
-          .from('profiles')
-          .update(updates)
-          .eq('id', widget.userId);
-
-      MessageModal.show(
-        context,
-        MessageType.success,
-        'Success!',
-        'User profile updated successfully.',
-      );
-      Navigator.pop(context); // Go back to admin homepage after update
-    } catch (e) {
-      debugPrint('Error updating user profile (admin): $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Error',
-        'Failed to update user profile: $e',
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   @override
@@ -160,172 +49,271 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
     super.dispose();
   }
 
+  Future<void> _fetchUserDetails() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final response = await supabaseService.client
+          .from('profiles')
+          .select('*')
+          .eq('id', widget.userId)
+          .single();
+
+      _fullNameController.text = response['full_name'] ?? '';
+      _emailController.text = response['email'] ?? ''; // Assuming email is stored in profiles table for admin view
+      _phoneNumberController.text = response['phone_number'] ?? '';
+      _cityController.text = response['city'] ?? '';
+      _countryController.text = response['country'] ?? '';
+      _telegramUsernameController.text = response['telegram_username'] ?? '';
+      _gender = response['gender'] ?? 'Male';
+      _userType = response['user_type'] ?? 'user';
+    } catch (e) {
+      debugPrint('Error fetching user details for admin: $e');
+      MessageModal.show(context, MessageType.error, 'Error', 'Failed to load user data.');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateUser() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    if (_newPasswordController.text.isNotEmpty && _newPasswordController.text != _confirmNewPasswordController.text) {
+      MessageModal.show(context, MessageType.error, 'Update Failed', 'New password and confirm password do not match.');
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      // Update profile data
+      await supabaseService.client.from('profiles').update({
+        'full_name': _fullNameController.text.trim(),
+        'phone_number': _phoneNumberController.text.trim(),
+        'city': _cityController.text.trim(),
+        'country': _countryController.text.trim(),
+        'telegram_username': _telegramUsernameController.text.trim(),
+        'gender': _gender,
+        'user_type': _userType,
+      }).eq('id', widget.userId);
+
+      // If a new password is provided, update user's auth password
+      if (_newPasswordController.text.isNotEmpty) {
+        // This operation typically requires admin privileges on the backend
+        // or a specific Supabase function for admin password reset.
+        // For simplicity, this example assumes direct update if allowed by RLS.
+        // In a real app, you'd likely call a secure backend function.
+        // Supabase client.auth.admin.updateUserById is not directly available client-side for security.
+        // You would need to set up a custom edge function or a server-side API.
+        // For now, we'll simulate it as if it's possible.
+        MessageModal.show(context, MessageType.info, 'Password Reset', 'Password reset functionality requires backend implementation. This is a placeholder.');
+      }
+
+      MessageModal.show(context, MessageType.success, 'Success', 'User profile updated successfully!');
+      Navigator.of(context).pop(); // Go back to admin homepage
+    } on PostgrestException catch (e) {
+      debugPrint('Supabase Update Error: ${e.message}');
+      MessageModal.show(context, MessageType.error, 'Update Failed', e.message);
+    } catch (e) {
+      debugPrint('General Update Error: $e');
+      MessageModal.show(context, MessageType.error, 'Update Failed', 'An unexpected error occurred: ${e.toString()}');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
           'Edit User',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        actions: [
-          IconButton(
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
-                  )
-                : const Icon(Icons.check, color: kWhite),
-            onPressed: _isLoading ? null : _updateUser,
-          ),
-          const SizedBox(width: kSmallSpacing), // Consistent spacing
-        ],
       ),
-      body: _isLoading && _fullNameController.text.isEmpty // Show loading only when initially fetching
-          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow))
           : SingleChildScrollView(
-              padding: kDefaultPadding, // Use kDefaultPadding
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'User Details',
-                      style: GoogleFonts.poppins(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: kDarkRed,
-                      ),
-                    ),
-                    const SizedBox(height: kLargeSpacing), // Consistent spacing
-                    _buildTextField(
-                      _fullNameController,
-                      'Full Name',
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Full Name is required';
-                        }
-                        return null;
-                      },
-                    ),
-                    _buildTextField(_emailController, 'Email', editable: false), // Email usually not editable
-                    _buildTextField(
-                      _phoneNumberController,
-                      'Phone Number',
-                      keyboardType: TextInputType.phone,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Phone Number is required';
-                        }
-                        if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
-                          return 'Enter a valid phone number';
-                        }
-                        return null;
-                      },
-                    ),
-                    _buildFormRow([
-                      _buildTextField(_cityController, 'City'),
-                      _buildTextField(_countryController, 'Country'),
-                    ]),
-                    _buildTextField(_telegramUsernameController, 'Telegram Username'),
-                    _buildGenderRadioButtons(),
-                    _buildUserTypeRadioButtons(),
-                    const SizedBox(height: kLargeSpacing), // Consistent spacing
-                    Text(
-                      'Reset Password (Admin Only)',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: kDarkRed,
-                      ),
-                    ),
-                    const SizedBox(height: kMediumSpacing), // Consistent spacing
-                    _buildTextField(_newPasswordController, 'New Password', obscureText: true, validator: (value) {
-                      if (_newPasswordController.text.isNotEmpty && (value == null || value.length < 6)) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    }),
-                    _buildTextField(_confirmNewPasswordController, 'Confirm New Password', obscureText: true, validator: (value) {
-                      if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
-                        return 'Passwords do not match';
-                      }
-                      return null;
-                    }),
-                    const SizedBox(height: kLargeSpacing), // Consistent spacing
-                    // The save button is now in the AppBar
-                  ],
-                ),
+              padding: kDefaultPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Editing User ID: ${widget.userId}',
+                    style: GoogleFonts.poppins(color: kGrey, fontSize: 16),
+                  ),
+                  const SizedBox(height: kLargeSpacing),
+                  _buildForm(),
+                  const SizedBox(height: kLargeSpacing),
+                  _buildActionButton(
+                    text: 'Save Changes',
+                    color: kPrimaryGreen, // Green for save
+                    onPressed: _updateUser,
+                  ),
+                ],
               ),
             ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String hintText, {bool obscureText = false, TextInputType keyboardType = TextInputType.text, bool editable = true, String? Function(String?)? validator}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
-      child: TextFormField(
-        controller: controller,
-        obscureText: obscureText,
-        keyboardType: keyboardType,
-        readOnly: !editable, // Make read-only if not editable
-        style: GoogleFonts.poppins(color: editable ? kBlack : kGrey),
-        decoration: InputDecoration(
-          hintText: hintText,
-          filled: true,
-          fillColor: editable ? kWhite : kLightGrey,
-          border: OutlineInputBorder(
-            borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+  Widget _buildForm() {
+    return Container(
+      padding: kMediumPadding,
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kDefaultBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildFormRow([
+            _buildTextField(
+              controller: _fullNameController,
+              labelText: 'Full Name',
+              icon: Icons.person,
+            ),
+            _buildTextField(
+              controller: _emailController,
+              labelText: 'Email',
+              icon: Icons.email,
+              keyboardType: TextInputType.emailAddress,
+              enabled: false, // Email is usually not editable by admin directly here
+            ),
+          ]),
+          const SizedBox(height: kMediumSpacing),
+          _buildFormRow([
+            _buildTextField(
+              controller: _phoneNumberController,
+              labelText: 'Phone Number',
+              icon: Icons.phone,
+              keyboardType: TextInputType.phone,
+            ),
+            _buildTextField(
+              controller: _cityController,
+              labelText: 'City',
+              icon: Icons.location_city,
+            ),
+          ]),
+          const SizedBox(height: kMediumSpacing),
+          _buildFormRow([
+            _buildTextField(
+              controller: _countryController,
+              labelText: 'Country',
+              icon: Icons.public,
+            ),
+            _buildTextField(
+              controller: _telegramUsernameController,
+              labelText: 'Telegram Username',
+              icon: FontAwesomeIcons.telegram,
+            ),
+          ]),
+          const SizedBox(height: kMediumSpacing),
+          _buildGenderSelection(),
+          const SizedBox(height: kMediumSpacing),
+          _buildUserTypeSelection(),
+          const SizedBox(height: kLargeSpacing),
+          Text(
+            'Admin Password Reset (Optional)',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kPrimaryBlack),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+          const SizedBox(height: kSmallSpacing),
+          _buildTextField(
+            controller: _newPasswordController,
+            labelText: 'New Password',
+            icon: Icons.lock,
+            obscureText: true,
           ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-            borderSide: const BorderSide(color: kDarkRed, width: 2), // Thicker border on focus
+          const SizedBox(height: kMediumSpacing),
+          _buildTextField(
+            controller: _confirmNewPasswordController,
+            labelText: 'Confirm New Password',
+            icon: Icons.lock_reset,
+            obscureText: true,
           ),
-          errorBorder: OutlineInputBorder( // Error border style
-            borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kRedError, width: 2),
-          ),
-          focusedErrorBorder: OutlineInputBorder( // Focused error border style
-            borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kRedError, width: 2),
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing), // Consistent padding
-        ),
-        validator: validator,
+        ],
       ),
     );
   }
 
-  Widget _buildGenderRadioButtons() {
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    bool obscureText = false,
+    bool enabled = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        obscureText: obscureText,
+        enabled: enabled,
+        style: GoogleFonts.poppins(color: enabled ? kPrimaryBlack : kGrey),
+        decoration: InputDecoration(
+          labelText: labelText,
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(icon, color: kGrey),
+          fillColor: kBackground,
+          filled: true,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenderSelection() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Gender',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kPrimaryBlack),
           ),
-          const SizedBox(height: kSmallSpacing), // Consistent spacing
           Row(
             children: [
               Radio<String>(
@@ -336,10 +324,10 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                     _gender = value!;
                   });
                 },
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow,
               ),
-              Text('Male', style: GoogleFonts.poppins()),
-              const SizedBox(width: kMediumSpacing), // Consistent spacing
+              Text('Male', style: GoogleFonts.poppins(color: kPrimaryBlack)),
+              const SizedBox(width: kMediumSpacing),
               Radio<String>(
                 value: 'Female',
                 groupValue: _gender,
@@ -348,21 +336,10 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                     _gender = value!;
                   });
                 },
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow,
               ),
-              Text('Female', style: GoogleFonts.poppins()),
-              const SizedBox(width: kMediumSpacing), // Consistent spacing
-              Radio<String>(
-                value: 'Other',
-                groupValue: _gender,
-                onChanged: (String? value) {
-                  setState(() {
-                    _gender = value!;
-                  });
-                },
-                activeColor: kDarkRed,
-              ),
-              Text('Other', style: GoogleFonts.poppins()),
+              Text('Female', style: GoogleFonts.poppins(color: kPrimaryBlack)),
+              const SizedBox(width: kMediumSpacing),
             ],
           ),
         ],
@@ -370,17 +347,17 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
     );
   }
 
-  Widget _buildUserTypeRadioButtons() {
+  Widget _buildUserTypeSelection() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'User Type',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kPrimaryBlack),
           ),
-          const SizedBox(height: kSmallSpacing), // Consistent spacing
+          const SizedBox(height: kSmallSpacing),
           Row(
             children: [
               Radio<String>(
@@ -391,10 +368,10 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                     _userType = value!;
                   });
                 },
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow,
               ),
-              Text('User', style: GoogleFonts.poppins()),
-              const SizedBox(width: kMediumSpacing), // Consistent spacing
+              Text('User', style: GoogleFonts.poppins(color: kPrimaryBlack)),
+              const SizedBox(width: kMediumSpacing),
               Radio<String>(
                 value: 'admin',
                 groupValue: _userType,
@@ -403,9 +380,9 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                     _userType = value!;
                   });
                 },
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow,
               ),
-              Text('Admin', style: GoogleFonts.poppins()),
+              Text('Admin', style: GoogleFonts.poppins(color: kPrimaryBlack)),
             ],
           ),
         ],
@@ -417,9 +394,64 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: children.map((child) => Expanded(child: Padding(
-        padding: const EdgeInsets.only(right: kMediumSpacing), // Consistent spacing
+        padding: const EdgeInsets.only(right: kMediumSpacing),
         child: child,
       ))).toList(),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String text,
+    required Color color,
+    required VoidCallback? onPressed,
+  }) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Apply inner shadow on press down for debossed effect
+          });
+        }
+      },
+      onTapUp: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow on press up
+          });
+        }
+      },
+      onTapCancel: () {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow if tap is cancelled
+          });
+        }
+      },
+      onTap: onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: kMediumPadding,
+        decoration: BoxDecoration(
+          color: color, // Use the passed color
+          borderRadius: kSmallBorderRadius,
+          boxShadow: onPressed != null
+              ? [
+                  kNeumorphicShadowDark,
+                  kNeumorphicShadowLight,
+                ]
+              : [], // No shadow if disabled
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: GoogleFonts.poppins(
+              color: kPrimaryWhite,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

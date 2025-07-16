@@ -40,35 +40,24 @@ class _LoginScreenState extends State<LoginScreen> {
         MessageModal.show(
           context,
           MessageType.success,
-          'Success!',
-          'You have successfully logged in.',
+          'Success',
+          'You have successfully logged in!',
         );
-        // Navigation is now handled by the StreamBuilder in main.dart
-      } else {
-        // This case should ideally not be reached if an AuthException is thrown
-        MessageModal.show(
-          context,
-          MessageType.error,
-          'Login Failed',
-          'An unknown error occurred. Please try again.',
-        );
+        // Navigate to homepage and remove all previous routes
+        Navigator.of(context).pushNamedAndRemoveUntil('/homepage', (route) => false);
       }
     } on AuthException catch (e) {
-      debugPrint('Supabase Sign In Error: ${e.message}');
       MessageModal.show(
         context,
         MessageType.error,
         'Login Failed',
-        e.message.contains('Invalid login credentials')
-            ? 'Invalid email or password. Please try again.'
-            : 'An error occurred: ${e.message}',
+        e.message,
       );
     } catch (e) {
-      debugPrint('General Sign In Error: $e');
       MessageModal.show(
         context,
         MessageType.error,
-        'Login Failed',
+        'Login Error',
         'An unexpected error occurred: ${e.toString()}',
       );
     } finally {
@@ -88,158 +77,112 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen, // pale yellow
+      backgroundColor: kBackground, // Use the new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
           'Login',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/signup');
-            },
-            style: TextButton.styleFrom(foregroundColor: kWhite),
-            child: Text(
-              'Sign Up',
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(width: kSmallSpacing), // Use kSmallSpacing
-        ],
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: kDefaultPadding, // Use kDefaultPadding
-          child: Container(
-            padding: const EdgeInsets.all(kLargeSpacing), // Use kLargeSpacing for inner padding
-            decoration: BoxDecoration(
-              color: kLightYellow, // Light yellow background
-              borderRadius: kDefaultBorderRadius, // Use kDefaultBorderRadius
-              boxShadow: const [kDefaultBoxShadow], // Use kDefaultBoxShadow
-            ),
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Form( // Added Form widget for validation
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Welcome Back!',
-                    style: GoogleFonts.poppins(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: kDarkRed,
-                    ),
+          padding: kDefaultPadding,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Welcome Back!',
+                  style: GoogleFonts.poppins(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryBlack,
                   ),
-                  Text(
-                    'Login to continue',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: kGrey, // Use kGrey for secondary text
-                    ),
-                  ),
-                  const SizedBox(height: kLargeSpacing), // Use kLargeSpacing
-                  _buildTextField(
-                    _emailController,
-                    'Email',
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Email is required';
-                      }
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                        return 'Enter a valid email';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
-                  _buildTextField(
-                    _passwordController,
-                    'Password',
-                    obscureText: true,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Password is required';
-                      }
-                      if (value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: kSmallSpacing), // Use kSmallSpacing
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
-                        debugPrint('Forgot Password?');
-                        // Implement navigation to forgot password screen
-                      },
-                      child: Text(
-                        'Forgot Password?',
-                        style: GoogleFonts.poppins(
-                          color: kDarkRed,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _signIn,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kDarkRed, // Dark red button
-                      foregroundColor: kWhite,
-                      padding: const EdgeInsets.symmetric(vertical: kMediumSpacing), // Use kMediumSpacing
-                      shape: RoundedRectangleBorder(
-                        borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-                      ),
-                      minimumSize: const Size(double.infinity, 50),
-                      elevation: 5, // Add a slight elevation for depth
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
-                          )
-                        : Text(
-                            'Login',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                ),
+                const SizedBox(height: kLargeSpacing),
+                _buildTextField(
+                  controller: _emailController,
+                  labelText: 'Email',
+                  icon: Icons.email,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                      return 'Please enter a valid email address';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: kMediumSpacing),
+                _buildTextField(
+                  controller: _passwordController,
+                  labelText: 'Password',
+                  icon: Icons.lock,
+                  obscureText: true,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your password';
+                    }
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters long';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: kLargeSpacing),
+                _buildPrimaryButton(
+                  text: _isLoading ? 'Signing In...' : 'Sign In',
+                  onPressed: _isLoading ? null : _signIn,
+                ),
+                const SizedBox(height: kLargeSpacing),
+                Text(
+                  'Or sign in with',
+                  style: GoogleFonts.poppins(color: kGrey),
+                ),
+                const SizedBox(height: kMediumSpacing),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildSocialIconButton(FontAwesomeIcons.google, () {
+                      MessageModal.show(context, MessageType.info, 'Coming Soon', 'Google sign-in is not yet implemented.');
+                    }),
+                    const SizedBox(width: kMediumSpacing),
+                    _buildSocialIconButton(FontAwesomeIcons.apple, () {
+                      MessageModal.show(context, MessageType.info, 'Coming Soon', 'Apple sign-in is not yet implemented.');
+                    }),
+                  ],
+                ),
+                const SizedBox(height: kLargeSpacing),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.pushNamed(context, '/signup');
+                  },
+                  child: Text.rich(
+                    TextSpan(
+                      text: 'Don\'t have an account? ',
+                      style: GoogleFonts.poppins(color: kGrey),
+                      children: [
+                        TextSpan(
+                          text: 'Sign Up',
+                          style: GoogleFonts.poppins(
+                            color: kPrimaryYellow, // Use yellow for links
+                            fontWeight: FontWeight.bold,
                           ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: kLargeSpacing), // Use kLargeSpacing
-                  Text(
-                    'Or login with',
-                    style: GoogleFonts.poppins(color: kGrey), // Use kGrey
-                  ),
-                  const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildSocialIconButton(FontAwesomeIcons.google, () { debugPrint('Google login'); }),
-                      const SizedBox(width: kMediumSpacing), // Use kMediumSpacing
-                      _buildSocialIconButton(FontAwesomeIcons.facebook, () { debugPrint('Facebook login'); }),
-                      const SizedBox(width: kMediumSpacing), // Use kMediumSpacing
-                      _buildSocialIconButton(FontAwesomeIcons.twitter, () { debugPrint('Twitter login'); }),
-                    ],
-                  ),
-                  const SizedBox(height: kLargeSpacing), // Use kLargeSpacing
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -247,59 +190,135 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hintText, {
-    bool obscureText = false,
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData icon,
     TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator, // Added validator
+    bool obscureText = false,
+    String? Function(String?)? validator,
   }) {
-    return TextFormField( // Changed to TextFormField for validation
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      style: GoogleFonts.poppins(color: kBlack),
-      decoration: InputDecoration(
-        hintText: hintText,
-        filled: true,
-        fillColor: kWhite,
-        border: OutlineInputBorder(
-          borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-          borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-          borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-          borderSide: const BorderSide(color: kDarkRed, width: 2), // Thicker border on focus
-        ),
-        errorBorder: OutlineInputBorder( // Error border style
-          borderRadius: kSmallBorderRadius,
-          borderSide: const BorderSide(color: kRedError, width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder( // Focused error border style
-          borderRadius: kSmallBorderRadius,
-          borderSide: const BorderSide(color: kRedError, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing), // Consistent padding
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground, // Match background for Neumorphism
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
       ),
-      validator: validator, // Assign the validator
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        obscureText: obscureText,
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        decoration: InputDecoration(
+          labelText: labelText,
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(icon, color: kGrey),
+          fillColor: kBackground, // Match background
+          filled: true,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none, // No border for Neumorphism
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Yellow accent on focus
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: const BorderSide(color: kRedError, width: 2),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: const BorderSide(color: kRedError, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+        validator: validator,
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String text,
+    required VoidCallback? onPressed,
+  }) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Apply inner shadow on press down for debossed effect
+            // This is a simplified visual feedback for Neumorphism
+          });
+        }
+      },
+      onTapUp: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow on press up
+          });
+        }
+      },
+      onTapCancel: () {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow if tap is cancelled
+          });
+        }
+      },
+      onTap: onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: kMediumPadding,
+        decoration: BoxDecoration(
+          color: kPrimaryBlack, // Primary button color
+          borderRadius: kSmallBorderRadius,
+          boxShadow: onPressed != null
+              ? [
+                  kNeumorphicShadowDark,
+                  kNeumorphicShadowLight,
+                ]
+              : [], // No shadow if disabled
+        ),
+        child: Center(
+          child: _isLoading
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    color: kPrimaryWhite,
+                    strokeWidth: 2,
+                  ),
+                )
+              : Text(
+                  text,
+                  style: GoogleFonts.poppins(
+                    color: kPrimaryWhite,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+        ),
+      ),
     );
   }
 
   Widget _buildSocialIconButton(IconData icon, VoidCallback onPressed) {
     return Container(
       decoration: BoxDecoration(
-        color: kWhite,
+        color: kBackground, // Match background for Neumorphism
         shape: BoxShape.circle,
-        boxShadow: const [kButtonBoxShadow], // Use kButtonBoxShadow
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
       ),
       child: IconButton(
         onPressed: onPressed,
-        icon: Icon(icon, size: 35, color: kGrey), // Use kGrey for social icons
-        padding: const EdgeInsets.all(kSmallSpacing), // Consistent padding
+        icon: Icon(icon, size: 35, color: kGrey),
+        padding: const EdgeInsets.all(kSmallSpacing),
       ),
     );
   }

@@ -17,9 +17,23 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  String? _selectedCategory; // New state for category filter
+  String? _selectedStatus; // New state for status filter (specific to lost items)
+
+  // Define available categories and statuses for lost items
+  final List<String> _categories = [
+    'All', 'Electronics', 'Documents', 'Clothing', 'Keys', 'Bags', 'Jewelry',
+    'Wallets', 'Books', 'Other'
+  ];
+  final List<String> _statuses = [
+    'All', 'Not Found', 'Found'
+  ];
+
   @override
   void initState() {
     super.initState();
+    _selectedCategory = _categories.first; // Initialize with 'All'
+    _selectedStatus = _statuses.first; // Initialize with 'All'
     _fetchAllLostItems();
     _searchController.addListener(_onSearchChanged);
   }
@@ -43,22 +57,33 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
       _isLoading = true;
     });
     try {
-      var query = supabaseService.client.from('lost_items').select();
+      // Start with the base query
+      var query = supabaseService.client
+          .from('lost_items')
+          .select('*');
 
-      // Apply search filter
+      // Apply filters conditionally
       if (_searchQuery.isNotEmpty) {
         query = query.ilike('item_name', '%$_searchQuery%');
       }
 
-      final List<Map<String, dynamic>> response = await query
-          .order('created_at', ascending: false); // Order by most recent
+      if (_selectedCategory != 'All' && _selectedCategory != null) {
+        query = query.eq('category', _selectedCategory!.toLowerCase());
+      }
+
+      if (_selectedStatus != 'All' && _selectedStatus != null) {
+        // Supabase status values are typically lowercase with underscores
+        query = query.eq('status', _selectedStatus!.toLowerCase().replaceAll(' ', '_'));
+      }
+
+      // Finally, apply ordering
+      final response = await query.order('date_lost', ascending: false);
 
       setState(() {
-        _lostItems = response;
+        _lostItems = List<Map<String, dynamic>>.from(response);
       });
     } catch (e) {
       debugPrint('Error fetching all lost items: $e');
-      // Optionally show a message modal here
     } finally {
       setState(() {
         _isLoading = false;
@@ -69,141 +94,211 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
           'All Lost Items',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack,
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Column( // Use Column to place search bar above the list
-        children: [
-          Padding(
-            padding: kDefaultPadding.copyWith(bottom: 0), // Adjust padding
-            child: _buildSearchBar(),
-          ),
-          const SizedBox(height: kMediumSpacing),
-          Expanded( // Expanded to fill remaining space
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: kDarkRed))
-                : RefreshIndicator(
-                    onRefresh: _fetchAllLostItems,
-                    child: _lostItems.isEmpty
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow))
+          : RefreshIndicator(
+              onRefresh: _fetchAllLostItems,
+              color: kPrimaryYellow,
+              child: SingleChildScrollView(
+                padding: kDefaultPadding,
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSearchBar(),
+                    const SizedBox(height: kMediumSpacing),
+                    _buildFilterDropdowns(),
+                    const SizedBox(height: kLargeSpacing),
+                    _lostItems.isEmpty
                         ? Center(
-                            child: SingleChildScrollView( // Allow scrolling for empty state
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: kDefaultPadding,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.sentiment_dissatisfied_outlined,
-                                    size: 60,
-                                    color: kGrey,
-                                  ),
-                                  const SizedBox(height: kSmallSpacing),
-                                  Text(
-                                    _searchQuery.isNotEmpty
-                                        ? 'No matching lost items found.'
-                                        : 'No lost items found.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.poppins(color: kGrey, fontSize: kBodySmall.fontSize),
-                                  ),
-                                ],
+                            child: Padding(
+                              padding: const EdgeInsets.all(kLargeSpacing),
+                              child: Text(
+                                'No lost items matching your criteria.',
+                                style: GoogleFonts.poppins(color: kGrey),
                               ),
                             ),
                           )
                         : ListView.builder(
-                            padding: const EdgeInsets.all(16.0),
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
                             itemCount: _lostItems.length,
                             itemBuilder: (context, index) {
                               final item = _lostItems[index];
                               return _buildItemCard(
-                                context,
-                                item['id'] as String, // Explicitly cast to String
+                                item['id'],
+                                item['image_url'],
                                 item['item_name'],
                                 item['description'],
-                                item['image_url'],
                                 item['status'], // Pass status for badge
                               );
                             },
                           ),
-                  ),
-          ),
-        ],
-      ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
-        color: kWhite,
+        color: kBackground,
         borderRadius: kSmallBorderRadius,
-        boxShadow: const [kDefaultBoxShadow],
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
       ),
       child: TextField(
         controller: _searchController,
-        style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
         decoration: InputDecoration(
-          hintText: 'Search for lost items...',
-          hintStyle: GoogleFonts.poppins(color: kGrey, fontSize: kBodyMedium.fontSize),
+          hintText: 'Search items...',
+          hintStyle: GoogleFonts.poppins(color: kGrey),
           prefixIcon: Icon(Icons.search, color: kGrey),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
                   icon: Icon(Icons.clear, color: kGrey),
                   onPressed: () {
                     _searchController.clear();
-                    setState(() {
-                      _searchQuery = '';
-                    });
-                    _fetchAllLostItems();
+                    _fetchAllLostItems(); // Clear search and re-fetch all items
                   },
                 )
               : null,
-          border: OutlineInputBorder(
+          enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
             borderSide: BorderSide.none,
           ),
-          filled: true,
-          fillColor: Colors.transparent,
-          contentPadding: kSmallPadding,
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
       ),
     );
   }
 
-  // Removed _buildFilterBar as requested
+  Widget _buildFilterDropdowns() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildDropdown(
+            value: _selectedCategory,
+            items: _categories,
+            labelText: 'Category',
+            icon: Icons.category,
+            onChanged: (newValue) {
+              setState(() {
+                _selectedCategory = newValue;
+              });
+              _fetchAllLostItems();
+            },
+          ),
+        ),
+        const SizedBox(width: kMediumSpacing),
+        Expanded(
+          child: _buildDropdown(
+            value: _selectedStatus,
+            items: _statuses,
+            labelText: 'Status',
+            icon: Icons.info_outline,
+            onChanged: (newValue) {
+              setState(() {
+                _selectedStatus = newValue;
+              });
+              _fetchAllLostItems();
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
-  Widget _buildItemCard(
-    BuildContext context,
-    String itemId,
-    String itemName,
-    String description,
-    String? imageUrl,
-    String status, // Now receiving status
-  ) {
+  Widget _buildDropdown({
+    required String? value,
+    required List<String> items,
+    required String labelText,
+    required IconData icon,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        decoration: InputDecoration(
+          labelText: labelText,
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(icon, color: kGrey),
+          fillColor: kBackground,
+          filled: true,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+        dropdownColor: kBackground,
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        icon: Icon(Icons.arrow_drop_down, color: kGrey),
+        items: items.map((String item) {
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text(item, style: GoogleFonts.poppins(color: kPrimaryBlack)),
+          );
+        }).toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _buildItemCard(String id, String? imageUrl, String title, String description, String status) {
     return GestureDetector(
       onTap: () {
-        Navigator.pushNamed(context, '/lost_item_view', arguments: itemId);
+        Navigator.pushNamed(context, '/lost_item_view', arguments: id);
       },
-      child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 8.0),
-        shape: RoundedRectangleBorder(borderRadius: kDefaultBorderRadius),
-        elevation: 3,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: kSmallSpacing),
+        decoration: BoxDecoration(
+          color: kBackground,
+          borderRadius: kDefaultBorderRadius,
+          boxShadow: [
+            kNeumorphicShadowDark,
+            kNeumorphicShadowLight,
+          ],
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: kMediumPadding,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -221,45 +316,37 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
                       : null,
                 ),
                 child: imageUrl == null || imageUrl.isEmpty
-                    ? Center(
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 40,
-                          color: kGrey,
-                        ),
+                    ? Icon(
+                        Icons.help_outline,
+                        color: kGrey,
+                        size: 40,
                       )
                     : null,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: kMediumSpacing),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      itemName,
+                      title,
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
-                        color: kDarkRed,
+                        color: kPrimaryBlack,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: kExtraSmallSpacing),
                     Text(
                       description,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: kGrey,
-                      ),
+                      style: GoogleFonts.poppins(color: kGrey, fontSize: 14),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: _buildStatusBadge(status), // Use status for badge
-                    ),
+                    const SizedBox(height: kExtraSmallSpacing),
+                    _buildStatusBadge(status), // Pass the status for badge
                   ],
                 ),
               ),
@@ -274,17 +361,17 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
     Color statusColor;
     String statusText;
 
-    switch (status.toLowerCase().trim()) { // Ensure consistent comparison
-      case 'not found': // Corrected from 'not_found'
+    switch (status.toLowerCase().trim()) {
+      case 'not found':
         statusColor = kRedError;
         statusText = 'Not Found';
         break;
       case 'found':
-        statusColor = kYellowEdit;
+        statusColor = kPrimaryYellow;
         statusText = 'Found';
         break;
       case 'claimed':
-        statusColor = kGreenSuccess;
+        statusColor = kPrimaryGreen;
         statusText = 'Claimed';
         break;
       case 'pending_approval':
@@ -292,7 +379,7 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
         statusText = 'Pending Approval';
         break;
       case 'rejected':
-        statusColor = kBlack;
+        statusColor = kPrimaryBlack;
         statusText = 'Rejected';
         break;
       default:
@@ -307,17 +394,13 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
         borderRadius: kCircularBorderRadius,
       ),
       child: Text(
-        statusText, // No need to capitalize again, already handled
+        statusText,
         style: GoogleFonts.poppins(
-          color: kWhite,
+          color: kPrimaryWhite,
           fontWeight: FontWeight.bold,
           fontSize: 12,
         ),
       ),
     );
   }
-}
-
-extension StringExtension on String {
-  String toCapitalized() => length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
 }

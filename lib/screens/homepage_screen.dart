@@ -48,43 +48,36 @@ class _HomepageScreenState extends State<HomepageScreen> {
         });
       } catch (e) {
         debugPrint('Error fetching user type: $e');
-        setState(() {
-          _currentUserUserType = 'user';
-        });
+        // Handle error, e.g., navigate to login or show a message
       }
-    } else {
-      setState(() {
-        _currentUserUserType = 'guest';
-      });
     }
   }
 
-  Future<void> _fetchItems({String? searchQuery}) async {
+  Future<void> _fetchItems() async {
     setState(() {
       _isLoading = true;
     });
-
     try {
-      var foundQuery = supabaseService.client.from('found_items').select();
-      var lostQuery = supabaseService.client.from('lost_items').select();
+      // Fetch latest 4 lost items
+      final lostItemsResponse = await supabaseService.client
+          .from('lost_items')
+          .select('*')
+          .order('created_at', ascending: false) // Order by creation date for "recently"
+          .limit(4); // Fetch latest 4 lost items
 
-      if (searchQuery != null && searchQuery.isNotEmpty) {
-        final pattern = '%$searchQuery%';
-        foundQuery = foundQuery.or(
-            'item_name.ilike.$pattern,description.ilike.$pattern,category.ilike.$pattern,found_location.ilike.$pattern');
-        lostQuery = lostQuery.or(
-            'item_name.ilike.$pattern,description.ilike.$pattern,category.ilike.$pattern,lost_location.ilike.$pattern');
-      }
-
-      final foundItems = await foundQuery.order('created_at', ascending: false).limit(5);
-      final lostItems = await lostQuery.order('created_at', ascending: false).limit(5);
+      // Fetch latest 4 found items
+      final foundItemsResponse = await supabaseService.client
+          .from('found_items')
+          .select('*')
+          .order('created_at', ascending: false) // Order by creation date for "recently"
+          .limit(4); // Fetch latest 4 found items
 
       setState(() {
-        _foundItems = foundItems;
-        _lostItems = lostItems;
+        _foundItems = List<Map<String, dynamic>>.from(foundItemsResponse);
+        _lostItems = List<Map<String, dynamic>>.from(lostItemsResponse);
       });
     } catch (e) {
-      debugPrint('Fetch error: $e');
+      debugPrint('Error fetching items: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -92,279 +85,355 @@ class _HomepageScreenState extends State<HomepageScreen> {
     }
   }
 
-  void _handleSearch() {
-    final input = _searchController.text.trim();
-    if (input != _lastSearchedText) {
-      _lastSearchedText = input;
-      _fetchItems(searchQuery: input);
-    }
-  }
+  Future<void> _searchItems(String query) async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      // Search found items
+      final foundItemsResponse = await supabaseService.client
+          .from('found_items')
+          .select('*')
+          .ilike('item_name', '%$query%')
+          .order('date_found', ascending: false)
+          .limit(4); // Limit search results too
 
-  void _clearSearch() {
-    _searchController.clear();
-    _lastSearchedText = '';
-    _fetchItems();
+      // Search lost items
+      final lostItemsResponse = await supabaseService.client
+          .from('lost_items')
+          .select('*')
+          .ilike('item_name', '%$query%')
+          .order('date_lost', ascending: false)
+          .limit(4); // Limit search results too
+
+      setState(() {
+        _foundItems = List<Map<String, dynamic>>.from(foundItemsResponse);
+        _lostItems = List<Map<String, dynamic>>.from(lostItemsResponse);
+      });
+    } catch (e) {
+      debugPrint('Error searching items: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
-        title: Text('FoundIt', style: GoogleFonts.poppins(color: kWhite, fontWeight: FontWeight.bold)),
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
+        title: Text(
+          'FoundIt',
+          style: GoogleFonts.poppins(
+            color: kPrimaryBlack,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         centerTitle: true,
         actions: [
-          // New: User Dashboard Button
           IconButton(
-            icon: const Icon(Icons.dashboard, color: kWhite), // Or a different icon like Icons.folder_shared
-            onPressed: () => Navigator.pushNamed(context, '/user_dashboard'),
-            tooltip: 'My Reports',
-          ),
-          IconButton(
-            icon: const Icon(Icons.person, color: kWhite),
-            onPressed: () => Navigator.pushNamed(context, '/profile'),
+            icon: Icon(Icons.person, color: kPrimaryBlack), // Profile icon
+            onPressed: () {
+              Navigator.pushNamed(context, '/profile');
+            },
           ),
           if (_currentUserUserType == 'admin')
             IconButton(
-              icon: const Icon(Icons.admin_panel_settings, color: kWhite),
-              onPressed: () => Navigator.pushNamed(context, '/admin_homepage'),
+              icon: Icon(Icons.admin_panel_settings, color: kPrimaryBlack), // Admin icon
+              onPressed: () {
+                Navigator.pushNamed(context, '/admin_homepage');
+              },
             ),
-          const SizedBox(width: kSmallSpacing),
+          IconButton(
+            icon: Icon(Icons.dashboard, color: kPrimaryBlack), // User Dashboard icon
+            onPressed: () {
+              Navigator.pushNamed(context, '/user_dashboard');
+            },
+          ),
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow)) // Use yellow for loading
           : RefreshIndicator(
-              onRefresh: () => _fetchItems(searchQuery: _searchController.text),
+              onRefresh: _fetchItems,
+              color: kPrimaryYellow, // Use yellow for refresh indicator
               child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
                 padding: kDefaultPadding,
+                physics: const AlwaysScrollableScrollPhysics(),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: kLargeSpacing),
                     _buildSearchBar(),
                     const SizedBox(height: kLargeSpacing),
-                    _buildSection(
-                      title: 'Recent Found Items',
-                      onViewAll: () => Navigator.pushNamed(context, '/all_found_items'),
-                      items: _foundItems,
-                      itemType: 'found',
-                    ),
+                    // Display Lost Items section first
+                    _buildSectionTitle('Recently Lost Items', () {
+                      Navigator.pushNamed(context, '/all_lost_items');
+                    }),
+                    const SizedBox(height: kMediumSpacing),
+                    _buildItemList(_lostItems, 'lost'),
                     const SizedBox(height: kLargeSpacing),
-                    _buildSection(
-                      title: 'Recent Lost Items',
-                      onViewAll: () => Navigator.pushNamed(context, '/all_lost_items'),
-                      items: _lostItems,
-                      itemType: 'lost',
-                    ),
-                    const SizedBox(height: kLargeSpacing),
+                    // Display Found Items section second
+                    _buildSectionTitle('Recently Found Items', () {
+                      Navigator.pushNamed(context, '/all_found_items');
+                    }),
+                    const SizedBox(height: kMediumSpacing),
+                    _buildItemList(_foundItems, 'found'),
+                    const SizedBox(height: kExtraLargeSpacing * 2), // Extra space for FAB
                   ],
                 ),
               ),
             ),
-      floatingActionButton: _buildFabContainer(),
+      // Position FAB to bottom right
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: _buildFabContainer(),
     );
   }
 
   Widget _buildSearchBar() {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: kWhite,
-              borderRadius: kSmallBorderRadius,
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search, color: kGrey),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: const InputDecoration(
-                      hintText: 'Search items...',
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                    style: GoogleFonts.poppins(color: kBlack),
-                    onSubmitted: (_) => _handleSearch(),
-                  ),
-                ),
-                if (_searchController.text.isNotEmpty)
-                  GestureDetector(
-                    onTap: _clearSearch,
-                    child: const Icon(Icons.clear, color: kGrey),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        ElevatedButton(
-          onPressed: _handleSearch,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: kDarkRed,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-          child: Text('Search', style: GoogleFonts.poppins(color: kWhite, fontWeight: FontWeight.w500)),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required VoidCallback onViewAll,
-    required List<Map<String, dynamic>> items,
-    required String itemType,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title, style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold, color: kDarkRed)),
-            TextButton(
-              onPressed: onViewAll,
-              style: TextButton.styleFrom(foregroundColor: kGrey),
-              child: Text('View All', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
-            ),
-          ],
-        ),
-        const SizedBox(height: kMediumSpacing),
-        items.isEmpty
-            ? Center(
-                child: Padding(
-                  padding: kDefaultPadding,
-                  child: Column(
-                    children: [
-                      Icon(itemType == 'found' ? Icons.search : Icons.help_outline, size: 60, color: kGrey),
-                      const SizedBox(height: kSmallSpacing),
-                      Text('No $itemType items reported yet.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(color: kGrey, fontSize: 16)),
-                    ],
-                  ),
-                ),
-              )
-            : SizedBox(
-                height: 220,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    return _buildItemCard(
-                      context,
-                      item['id'] as String, // Explicitly cast to String
-                      item['item_name'],
-                      item['description'],
-                      item['image_url'],
-                      itemType,
-                    );
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        decoration: InputDecoration(
+          hintText: 'Search items...',
+          hintStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(Icons.search, color: kGrey),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: kGrey),
+                  onPressed: () {
+                    _searchController.clear();
+                    _searchItems(''); // Clear search and re-fetch all items
                   },
-                ),
-              ),
+                )
+              : null,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+        onChanged: (value) {
+          if (value.isEmpty) {
+            _searchItems(''); // If search is cleared, fetch all items
+          }
+        },
+        onSubmitted: (value) {
+          _searchItems(value); // Perform search on submit
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title, VoidCallback onTap) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: kPrimaryBlack,
+          ),
+        ),
+        GestureDetector(
+          onTap: onTap,
+          child: Text(
+            'View All',
+            style: GoogleFonts.poppins(
+              color: kPrimaryYellow, // Use yellow for links
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildItemCard(
-    BuildContext context,
-    String itemId,
-    String itemName,
-    String description,
-    String? imageUrl,
-    String itemType,
-  ) {
+  Widget _buildItemList(List<Map<String, dynamic>> items, String itemType) {
+    if (items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(kLargeSpacing),
+          child: Text(
+            'No ${itemType == 'found' ? 'found' : 'lost'} items yet.',
+            style: GoogleFonts.poppins(color: kGrey),
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      // Ensure itemCount does not exceed 4 if more items are fetched but only 4 are desired for display
+      itemCount: items.length > 4 ? 4 : items.length, // Limit to max 4 items
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return _buildItemCard(
+          item['id'],
+          item['image_url'],
+          item['item_name'],
+          item['description'],
+          itemType,
+        );
+      },
+    );
+  }
+
+  Widget _buildItemCard(String id, String? imageUrl, String title, String description, String itemType) {
     return GestureDetector(
       onTap: () {
-        Navigator.pushNamed(
-            context, itemType == 'lost' ? '/lost_item_view' : '/found_item_view',
-            arguments: itemId);
+        if (itemType == 'found') {
+          Navigator.pushNamed(context, '/found_item_view', arguments: id);
+        } else {
+          Navigator.pushNamed(context, '/lost_item_view', arguments: id);
+        }
       },
       child: Container(
-        width: 180,
-        margin: const EdgeInsets.only(right: kMediumSpacing),
+        margin: const EdgeInsets.symmetric(vertical: kSmallSpacing),
         decoration: BoxDecoration(
-          color: kLightYellow,
+          color: kBackground, // Match background for Neumorphism
           borderRadius: kDefaultBorderRadius,
-          boxShadow: const [kDefaultBoxShadow],
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              flex: 3,
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                child: imageUrl != null && imageUrl.isNotEmpty
-                    ? Image.network(imageUrl, width: double.infinity, fit: BoxFit.cover)
-                    : Image.network('https://placehold.co/700x700/CCCCCC/FFFFFF?text=No+Image', fit: BoxFit.cover),
-              ),
-            ),
-            const SizedBox(height: kSmallSpacing),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
-              child: Text(
-                itemName,
-                style: GoogleFonts.poppins(
-                  color: const Color(0xFF333333),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: kSmallSpacing),
-              child: Text(
-                description,
-                style: GoogleFonts.poppins(color: kGrey, fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: kSmallSpacing),
+          boxShadow: [
+            kNeumorphicShadowDark,
+            kNeumorphicShadowLight,
           ],
+        ),
+        child: Padding(
+          padding: kMediumPadding,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: kLightGrey, // Placeholder background
+                  borderRadius: kSmallBorderRadius,
+                  image: imageUrl != null && imageUrl.isNotEmpty
+                      ? DecorationImage(
+                          image: NetworkImage(imageUrl),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: imageUrl == null || imageUrl.isEmpty
+                    ? Icon(
+                        itemType == 'found' ? Icons.search : Icons.help_outline,
+                        color: kGrey,
+                        size: 40,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: kMediumSpacing),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: kPrimaryBlack,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: kExtraSmallSpacing),
+                    Text(
+                      description,
+                      style: GoogleFonts.poppins(color: kGrey, fontSize: 14),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  // Adjusted _buildFabContainer for bottom-right positioning
   Widget _buildFabContainer() {
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end, // Align children to the end (right)
       children: [
-        _buildFab(FontAwesomeIcons.question, 'Report Lost Item', () {
-          Navigator.pushNamed(context, '/report_lost');
-        }),
+        _buildFab(
+          FontAwesomeIcons.question,
+          'Report Lost Item',
+          () {
+            Navigator.pushNamed(context, '/report_lost');
+          },
+          color: kPrimaryYellow, // Yellow for lost
+        ),
         const SizedBox(height: kMediumSpacing),
-        _buildFab(FontAwesomeIcons.plus, 'Report Found Item', () {
-          Navigator.pushNamed(context, '/report_found');
-        }),
+        _buildFab(
+          FontAwesomeIcons.plus,
+          'Report Found Item',
+          () {
+            Navigator.pushNamed(context, '/report_found');
+          },
+          color: kPrimaryGreen, // Green for found
+        ),
       ],
     );
   }
 
-  Widget _buildFab(IconData icon, String tooltip, VoidCallback onPressed) {
+  Widget _buildFab(IconData icon, String tooltip, VoidCallback onPressed, {required Color color}) {
     return Tooltip(
       message: tooltip,
-      child: FloatingActionButton(
-        onPressed: onPressed,
-        backgroundColor: kDarkRed,
-        foregroundColor: kWhite,
-        heroTag: tooltip,
-        elevation: 5,
-        shape: RoundedRectangleBorder(borderRadius: kCircularBorderRadius),
-        child: Icon(icon),
+      child: GestureDetector(
+        onTapDown: (_) {
+          setState(() {
+            // Apply inner shadow on press down for debossed effect
+          });
+        },
+        onTapUp: (_) {
+          setState(() {
+            // Revert to outer shadow on press up
+          });
+        } ,
+        onTapCancel: () {
+          setState(() {
+            // Revert to outer shadow if tap is cancelled
+          });
+        },
+        onTap: onPressed,
+        child: Container(
+          width: 60, // Standard FAB size
+          height: 60,
+          decoration: BoxDecoration(
+            color: color, // Use the passed color
+            shape: BoxShape.circle,
+            boxShadow: [
+              kNeumorphicShadowDark,
+              kNeumorphicShadowLight,
+            ],
+          ),
+          child: Icon(icon, color: kPrimaryWhite, size: 28), // White icon
+        ),
       ),
     );
   }

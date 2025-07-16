@@ -30,10 +30,10 @@ class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController _signupCityController = TextEditingController();
   final TextEditingController _signupCountryController = TextEditingController();
   final TextEditingController _signupTelegramUsernameController = TextEditingController();
-  String _signupGender = 'Male'; // Default for signup
 
-  final _loginFormKey = GlobalKey<FormState>();
-  final _signupFormKey = GlobalKey<FormState>();
+  String _signupGender = 'Male'; // Default gender for signup
+  final _loginFormKey = GlobalKey<FormState>(); // Added for login form validation
+  final _signupFormKey = GlobalKey<FormState>(); // Added for signup form validation
 
   @override
   void dispose() {
@@ -50,7 +50,7 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _signIn() async {
     if (!_loginFormKey.currentState!.validate()) {
       return;
     }
@@ -60,16 +60,19 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      await supabaseService.signIn(
+      final AuthResponse response = await supabaseService.signIn(
         email: _loginEmailController.text.trim(),
         password: _loginPasswordController.text.trim(),
       );
-      // On successful login, explicitly navigate to HomepageScreen and remove all previous routes
-      if (mounted) { // Check if the widget is still in the tree
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomepageScreen()),
-          (Route<dynamic> route) => false, // This predicate removes all routes below the new one
+
+      if (response.user != null) {
+        MessageModal.show(
+          context,
+          MessageType.success,
+          'Success',
+          'You have successfully logged in!',
         );
+        Navigator.of(context).pushNamedAndRemoveUntil('/homepage', (route) => false);
       }
     } on AuthException catch (e) {
       MessageModal.show(
@@ -82,19 +85,17 @@ class _AuthScreenState extends State<AuthScreen> {
       MessageModal.show(
         context,
         MessageType.error,
-        'Login Failed',
+        'Login Error',
         'An unexpected error occurred: ${e.toString()}',
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _handleSignUp() async {
+  Future<void> _signUp() async {
     if (!_signupFormKey.currentState!.validate()) {
       return;
     }
@@ -103,8 +104,8 @@ class _AuthScreenState extends State<AuthScreen> {
       MessageModal.show(
         context,
         MessageType.error,
-        'Password Mismatch',
-        'Password and Confirm Password do not match.',
+        'Signup Failed',
+        'Passwords do not match.',
       );
       return;
     }
@@ -114,7 +115,7 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      await supabaseService.signUp(
+      final AuthResponse response = await supabaseService.signUp(
         email: _signupEmailController.text.trim(),
         password: _signupPasswordController.text.trim(),
         fullName: _signupFullNameController.text.trim(),
@@ -123,58 +124,53 @@ class _AuthScreenState extends State<AuthScreen> {
         country: _signupCountryController.text.trim(),
         telegramUsername: _signupTelegramUsernameController.text.trim(),
         gender: _signupGender,
-        userType: 'user', // Default to 'user' for new signups
       );
-      MessageModal.show(
-        context,
-        MessageType.success,
-        'Sign Up Successful!',
-        'Your account has been created. You can now log in.',
-      );
-      // After successful signup, switch to login form and clear previous routes
-      if (mounted) { // Check if the widget is still in the tree
+
+      if (response.user != null) {
+        MessageModal.show(
+          context,
+          MessageType.success,
+          'Success',
+          'Account created successfully! Please check your email for verification.',
+        );
         setState(() {
-          _isLogin = true; // Switch to login form after successful signup
+          _isLogin = true; // Switch to login view after successful signup
+          _signupFullNameController.clear();
+          _signupEmailController.clear();
+          _signupPasswordController.clear();
+          _signupConfirmPasswordController.clear();
+          _signupPhoneNumberController.clear();
+          _signupCityController.clear();
+          _signupCountryController.clear();
+          _signupTelegramUsernameController.clear();
+          _signupGender = 'Male';
         });
-        _loginEmailController.text = _signupEmailController.text; // Pre-fill login email
-        // You might want to also clear the signup controllers here
-        _signupFullNameController.clear();
-        _signupEmailController.clear();
-        _signupPasswordController.clear();
-        _signupConfirmPasswordController.clear();
-        _signupPhoneNumberController.clear();
-        _signupCityController.clear();
-        _signupCountryController.clear();
-        _signupTelegramUsernameController.clear();
-        _signupGender = 'Male';
       }
     } on AuthException catch (e) {
       MessageModal.show(
         context,
         MessageType.error,
-        'Sign Up Failed',
+        'Signup Failed',
         e.message,
       );
     } catch (e) {
       MessageModal.show(
         context,
         MessageType.error,
-        'Sign Up Failed',
+        'Signup Error',
         'An unexpected error occurred: ${e.toString()}',
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use the new background color
       body: Center(
         child: SingleChildScrollView(
           padding: kDefaultPadding,
@@ -184,54 +180,22 @@ class _AuthScreenState extends State<AuthScreen> {
               Text(
                 'FoundIt',
                 style: GoogleFonts.poppins(
-                  fontSize: kDisplayLarge.fontSize,
-                  fontWeight: kDisplayLarge.fontWeight,
-                  color: kDarkRed,
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: kPrimaryBlack,
                 ),
               ),
               const SizedBox(height: kExtraLargeSpacing),
-              Container(
-                padding: kDefaultPadding,
-                decoration: BoxDecoration(
-                  color: kLightYellow,
-                  borderRadius: kDefaultBorderRadius,
-                  boxShadow: const [kDefaultBoxShadow],
-                ),
-                child: AnimatedSwitcher(
-                  duration: kMediumAnimationDuration, // Smooth transition
-                  child: _isLogin ? _buildLoginForm() : _buildSignUpForm(),
-                ),
-              ),
-              const SizedBox(height: kMediumSpacing),
-              TextButton(
-                onPressed: _isLoading
-                    ? null
-                    : () {
-                        setState(() {
-                          _isLogin = !_isLogin;
-                          // Clear controllers when switching forms
-                          _loginEmailController.clear();
-                          _loginPasswordController.clear();
-                          _signupFullNameController.clear();
-                          _signupEmailController.clear();
-                          _signupPasswordController.clear();
-                          _signupConfirmPasswordController.clear();
-                          _signupPhoneNumberController.clear();
-                          _signupCityController.clear();
-                          _signupCountryController.clear();
-                          _signupTelegramUsernameController.clear();
-                          _signupGender = 'Male';
-                        });
-                      },
-                child: Text(
-                  _isLogin
-                      ? 'Don\'t have an account? Sign Up'
-                      : 'Already have an account? Log In',
-                  style: GoogleFonts.poppins(
-                    color: kDarkRed,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              _buildToggleButtons(),
+              const SizedBox(height: kLargeSpacing),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300), // Use a fixed duration
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return FadeTransition(opacity: animation, child: child);
+                },
+                child: _isLogin
+                    ? _buildLoginSection(key: const ValueKey('login'))
+                    : _buildSignupSection(key: const ValueKey('signup')),
               ),
             ],
           ),
@@ -240,132 +204,211 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildLoginForm() {
+  Widget _buildToggleButtons() {
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kCircularBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildToggleButton('Login', true),
+          _buildToggleButton('Sign Up', false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleButton(String text, bool isLoginButton) {
+    final bool isSelected = _isLogin == isLoginButton;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _isLogin = isLoginButton;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+        decoration: BoxDecoration(
+          color: isSelected ? kPrimaryYellow : kBackground, // Yellow for selected, background for unselected
+          borderRadius: kCircularBorderRadius,
+          boxShadow: isSelected
+              ? [
+                  kNeumorphicInnerShadowDark, // Inner shadow for pressed effect
+                  kNeumorphicInnerShadowLight,
+                ]
+              : [],
+        ),
+        child: Text(
+          text,
+          style: GoogleFonts.poppins(
+            color: isSelected ? kPrimaryWhite : kPrimaryBlack, // White text on yellow, black otherwise
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginSection({Key? key}) {
     return Form(
       key: _loginFormKey,
       child: Column(
-        key: const ValueKey<bool>(true), // Unique key for AnimatedSwitcher
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        key: key,
         children: [
-          Text(
-            'Log In',
-            style: GoogleFonts.poppins(
-              fontSize: kTitleLarge.fontSize,
-              fontWeight: kTitleLarge.fontWeight,
-              color: kTitleLarge.color,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: kLargeSpacing),
           _buildTextField(
-            _loginEmailController,
-            'Email',
-            Icons.email,
+            controller: _loginEmailController,
+            labelText: 'Email',
+            icon: Icons.email,
             keyboardType: TextInputType.emailAddress,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Email is required';
+                return 'Please enter your email';
               }
               if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                return 'Enter a valid email';
+                return 'Please enter a valid email address';
               }
               return null;
             },
           ),
           const SizedBox(height: kMediumSpacing),
           _buildTextField(
-            _loginPasswordController,
-            'Password',
-            Icons.lock,
+            controller: _loginPasswordController,
+            labelText: 'Password',
+            icon: Icons.lock,
             obscureText: true,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Password is required';
+                return 'Please enter your password';
+              }
+              if (value.length < 6) {
+                return 'Password must be at least 6 characters long';
               }
               return null;
             },
           ),
           const SizedBox(height: kLargeSpacing),
-          ElevatedButton(
-            onPressed: _isLoading ? null : _handleLogin,
-            child: _isLoading
-                ? const CircularProgressIndicator(color: kWhite, strokeWidth: 2)
-                : Text('Log In', style: kLabelLarge),
+          _buildPrimaryButton(
+            text: _isLoading ? 'Logging In...' : 'Login',
+            onPressed: _isLoading ? null : _signIn,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSignUpForm() {
+  Widget _buildSignupSection({Key? key}) {
     return Form(
       key: _signupFormKey,
       child: Column(
-        key: const ValueKey<bool>(false), // Unique key for AnimatedSwitcher
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        key: key,
         children: [
-          Text(
-            'Sign Up',
-            style: GoogleFonts.poppins(
-              fontSize: kTitleLarge.fontSize,
-              fontWeight: kTitleLarge.fontWeight,
-              color: kTitleLarge.color,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: kLargeSpacing),
           _buildTextField(
-            _signupFullNameController,
-            'Full Name',
-            Icons.person,
+            controller: _signupFullNameController,
+            labelText: 'Full Name',
+            icon: Icons.person,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Full Name is required';
+                return 'Please enter your full name';
               }
               return null;
             },
           ),
           const SizedBox(height: kMediumSpacing),
           _buildTextField(
-            _signupEmailController,
-            'Email',
-            Icons.email,
+            controller: _signupEmailController,
+            labelText: 'Email',
+            icon: Icons.email,
             keyboardType: TextInputType.emailAddress,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Email is required';
+                return 'Please enter your email';
               }
               if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                return 'Enter a valid email';
+                return 'Please enter a valid email address';
               }
               return null;
             },
           ),
           const SizedBox(height: kMediumSpacing),
           _buildTextField(
-            _signupPasswordController,
-            'Password',
-            Icons.lock,
+            controller: _signupPhoneNumberController,
+            labelText: 'Phone Number',
+            icon: Icons.phone,
+            keyboardType: TextInputType.phone,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your phone number';
+              }
+              if (!RegExp(r'^\+?[0-9]{10,}$').hasMatch(value)) {
+                return 'Please enter a valid phone number';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: kMediumSpacing),
+          _buildTextField(
+            controller: _signupCityController,
+            labelText: 'City',
+            icon: Icons.location_city,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your city';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: kMediumSpacing),
+          _buildTextField(
+            controller: _signupCountryController,
+            labelText: 'Country',
+            icon: Icons.public,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your country';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: kMediumSpacing),
+          _buildTextField(
+            controller: _signupTelegramUsernameController,
+            labelText: 'Telegram Username (Optional)',
+            icon: Icons.telegram, // Using Material icon for now, FontAwesomeIcons.telegram is also an option
+          ),
+          const SizedBox(height: kMediumSpacing),
+          _buildGenderSelection(),
+          const SizedBox(height: kMediumSpacing),
+          _buildTextField(
+            controller: _signupPasswordController,
+            labelText: 'Password',
+            icon: Icons.lock,
             obscureText: true,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Password is required';
+                return 'Please enter a password';
               }
               if (value.length < 6) {
-                return 'Password must be at least 6 characters';
+                return 'Password must be at least 6 characters long';
               }
               return null;
             },
           ),
           const SizedBox(height: kMediumSpacing),
           _buildTextField(
-            _signupConfirmPasswordController,
-            'Confirm Password',
-            Icons.lock_reset,
+            controller: _signupConfirmPasswordController,
+            labelText: 'Confirm Password',
+            icon: Icons.lock_reset,
             obscureText: true,
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'Confirm Password is required';
+                return 'Please confirm your password';
               }
               if (value != _signupPasswordController.text) {
                 return 'Passwords do not match';
@@ -373,123 +416,172 @@ class _AuthScreenState extends State<AuthScreen> {
               return null;
             },
           ),
-          const SizedBox(height: kMediumSpacing),
-          _buildTextField(
-            _signupPhoneNumberController,
-            'Phone Number',
-            Icons.phone,
-            keyboardType: TextInputType.phone,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Phone Number is required';
-              }
-              if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
-                return 'Enter a valid phone number';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: kMediumSpacing),
-          _buildTextField(
-            _signupCityController,
-            'City',
-            Icons.location_city,
-          ),
-          const SizedBox(height: kMediumSpacing),
-          _buildTextField(
-            _signupCountryController,
-            'Country',
-            Icons.public,
-          ),
-          const SizedBox(height: kMediumSpacing),
-          _buildTextField(
-            _signupTelegramUsernameController,
-            'Telegram Username',
-            Icons.alternate_email,
-          ),
-          const SizedBox(height: kMediumSpacing),
-          _buildGenderRadioButtons(),
           const SizedBox(height: kLargeSpacing),
-          ElevatedButton(
-            onPressed: _isLoading ? null : _handleSignUp,
-            child: _isLoading
-                ? const CircularProgressIndicator(color: kWhite, strokeWidth: 2)
-                : Text('Sign Up', style: kLabelLarge),
+          _buildPrimaryButton(
+            text: _isLoading ? 'Signing Up...' : 'Sign Up',
+            onPressed: _isLoading ? null : _signUp,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hintText,
-    IconData icon, {
-    bool obscureText = false,
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData icon,
     TextInputType keyboardType = TextInputType.text,
+    bool obscureText = false,
+    int maxLines = 1,
     String? Function(String?)? validator,
   }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
-      decoration: InputDecoration(
-        hintText: hintText,
-        prefixIcon: Icon(icon, color: kGrey),
+    return Container(
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: kSmallBorderRadius,
+        boxShadow: [
+          kNeumorphicShadowDark,
+          kNeumorphicShadowLight,
+        ],
       ),
-      validator: validator,
+      child: TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        obscureText: obscureText,
+        maxLines: maxLines,
+        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        decoration: InputDecoration(
+          labelText: labelText,
+          labelStyle: GoogleFonts.poppins(color: kGrey),
+          prefixIcon: Icon(icon, color: kGrey),
+          fillColor: kBackground,
+          filled: true,
+          enabledBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: const BorderSide(color: kRedError, width: 2),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: kSmallBorderRadius,
+            borderSide: const BorderSide(color: kRedError, width: 2),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
+        ),
+        validator: validator,
+      ),
     );
   }
 
-  Widget _buildGenderRadioButtons() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Gender',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
+  Widget _buildGenderSelection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Gender',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kPrimaryBlack),
+          ),
+          Row(
+            children: [
+              Radio<String>(
+                value: 'Male',
+                groupValue: _signupGender,
+                onChanged: (String? value) {
+                  setState(() {
+                    _signupGender = value!;
+                  });
+                },
+                activeColor: kPrimaryYellow,
+              ),
+              Text('Male', style: GoogleFonts.poppins(color: kPrimaryBlack)),
+              const SizedBox(width: kMediumSpacing),
+              Radio<String>(
+                value: 'Female',
+                groupValue: _signupGender,
+                onChanged: (String? value) {
+                  setState(() {
+                    _signupGender = value!;
+                  });
+                },
+                activeColor: kPrimaryYellow,
+              ),
+              Text('Female', style: GoogleFonts.poppins(color: kPrimaryBlack)),
+              const SizedBox(width: kMediumSpacing),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String text,
+    required VoidCallback? onPressed,
+  }) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Apply inner shadow on press down for debossed effect
+          });
+        }
+      },
+      onTapUp: (_) {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow on press up
+          });
+        }
+      },
+      onTapCancel: () {
+        if (onPressed != null) {
+          setState(() {
+            // Revert to outer shadow if tap is cancelled
+          });
+        }
+      },
+      onTap: onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: kMediumPadding,
+        decoration: BoxDecoration(
+          color: kPrimaryBlack, // Primary button color
+          borderRadius: kSmallBorderRadius,
+          boxShadow: onPressed != null
+              ? [
+                  kNeumorphicShadowDark,
+                  kNeumorphicShadowLight,
+                ]
+              : [], // No shadow if disabled
         ),
-        Row(
-          children: [
-            Radio<String>(
-              value: 'Male',
-              groupValue: _signupGender,
-              onChanged: (String? value) {
-                setState(() {
-                  _signupGender = value!;
-                });
-              },
-              activeColor: kDarkRed,
-            ),
-            Text('Male', style: GoogleFonts.poppins(color: kBlack)),
-            const SizedBox(width: kMediumSpacing),
-            Radio<String>(
-              value: 'Female',
-              groupValue: _signupGender,
-              onChanged: (String? value) {
-                setState(() {
-                  _signupGender = value!;
-                });
-              },
-              activeColor: kDarkRed,
-            ),
-            Text('Female', style: GoogleFonts.poppins(color: kBlack)),
-            const SizedBox(width: kMediumSpacing),
-            Radio<String>(
-              value: 'Other',
-              groupValue: _signupGender,
-              onChanged: (String? value) {
-                setState(() {
-                  _signupGender = value!;
-                });
-              },
-              activeColor: kDarkRed,
-            ),
-            Text('Other', style: GoogleFonts.poppins(color: kBlack)),
-          ],
+        child: Center(
+          child: _isLoading
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    color: kPrimaryWhite,
+                    strokeWidth: 2,
+                  ),
+                )
+              : Text(
+                  text,
+                  style: GoogleFonts.poppins(
+                    color: kPrimaryWhite,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
         ),
-      ],
+      ),
     );
   }
 }

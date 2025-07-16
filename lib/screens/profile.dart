@@ -9,7 +9,6 @@ import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase type
 import '../ui_constants.dart'; // Import your constants file
 import '../services/supabase_service.dart'; // Import SupabaseService
 import '../widgets/message_modal.dart'; // Import MessageModal
-// Removed: import 'package:flutter/services.dart'; // Not needed for navigation to login screen
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -301,19 +300,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Use new background color
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Match app bar background
+        elevation: 0,
         title: Text(
           'My Profile',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack, // Changed to kPrimaryBlack
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
+          icon: const Icon(Icons.arrow_back_ios, color: kPrimaryBlack), // Changed to kPrimaryBlack
           onPressed: () {
             Navigator.pop(context);
           },
@@ -321,7 +321,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           if (!_isEditing)
             IconButton(
-              icon: const Icon(Icons.edit, color: kYellowEdit),
+              icon: const Icon(Icons.edit, color: kPrimaryYellow), // Changed to kPrimaryYellow
               onPressed: () {
                 setState(() {
                   _isEditing = true;
@@ -334,16 +334,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
+                      child: CircularProgressIndicator(color: kPrimaryBlack, strokeWidth: 2), // Changed to kPrimaryBlack
                     )
-                  : const Icon(Icons.check, color: kWhite),
+                  : const Icon(Icons.check, color: kPrimaryBlack), // Changed to kPrimaryBlack
               onPressed: _isLoading ? null : _updateProfile,
             ),
           const SizedBox(width: kSmallSpacing), // Consistent spacing
         ],
       ),
       body: _isLoading && !_isEditing // Show loading only when initially fetching
-          ? const Center(child: CircularProgressIndicator(color: kDarkRed))
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow)) // Changed to kPrimaryYellow
           : SingleChildScrollView(
               padding: kDefaultPadding, // Use kDefaultPadding
               child: Form(
@@ -376,11 +376,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(kSmallSpacing / 2),
                                   decoration: BoxDecoration(
-                                    color: kDarkRed,
+                                    color: kPrimaryBlack, // Changed to kPrimaryBlack
                                     shape: BoxShape.circle,
-                                    boxShadow: const [kButtonBoxShadow],
+                                    boxShadow: [
+                                      kNeumorphicShadowDark,
+                                      kNeumorphicShadowLight,
+                                    ],
                                   ),
-                                  child: const Icon(Icons.camera_alt, color: kWhite, size: 20),
+                                  child: const Icon(Icons.camera_alt, color: kPrimaryWhite, size: 20), // Changed to kPrimaryWhite
                                 ),
                               ),
                           ],
@@ -403,9 +406,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   }
                                 });
                               },
-                              activeColor: kDarkRed,
+                              activeColor: kPrimaryYellow, // Changed to kPrimaryYellow
                             ),
-                            Text('Remove Photo', style: GoogleFonts.poppins(color: kBlack)),
+                            Text('Remove Photo', style: GoogleFonts.poppins(color: kPrimaryBlack)), // Changed to kPrimaryBlack
                           ],
                         ),
                       ),
@@ -426,13 +429,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               style: GoogleFonts.poppins(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: kDarkRed,
+                                color: kPrimaryBlack, // Changed to kPrimaryBlack
                               ),
                             ),
                             const SizedBox(height: kMediumSpacing),
                             _buildTextField(
-                              _fullNameController,
-                              'Full Name',
+                              controller: _fullNameController, // Added named parameter
+                              labelText: 'Full Name', // Added named parameter
                               editable: _isEditing,
                               validator: (value) {
                                 if (_isEditing && (value == null || value.isEmpty)) {
@@ -441,10 +444,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 return null;
                               },
                             ),
-                            _buildTextField(_emailController, 'Email', editable: false), // Email not directly editable here for security
                             _buildTextField(
-                              _phoneNumberController,
-                              'Phone Number',
+                              controller: _emailController, // Added named parameter
+                              labelText: 'Email', // Added named parameter
+                              editable: false, // Email not directly editable here for security
+                            ),
+                            _buildTextField(
+                              controller: _phoneNumberController, // Added named parameter
+                              labelText: 'Phone Number', // Added named parameter
                               editable: _isEditing,
                               keyboardType: TextInputType.phone,
                               validator: (value) {
@@ -458,10 +465,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               },
                             ),
                             _buildFormRow([
-                              _buildTextField(_cityController, 'City', editable: _isEditing),
-                              _buildTextField(_countryController, 'Country', editable: _isEditing),
+                              _buildTextField(
+                                controller: _cityController, // Added named parameter
+                                labelText: 'City', // Added named parameter
+                                editable: _isEditing,
+                              ),
+                              _buildTextField(
+                                controller: _countryController, // Added named parameter
+                                labelText: 'Country', // Added named parameter
+                                editable: _isEditing,
+                              ),
                             ]),
-                            _buildTextField(_telegramUsernameController, 'Telegram Username', editable: _isEditing),
+                            _buildTextField(
+                              controller: _telegramUsernameController, // Added named parameter
+                              labelText: 'Telegram Username', // Added named parameter
+                              editable: _isEditing,
+                            ),
                             _buildGenderRadioButtons(),
                           ],
                         ),
@@ -485,23 +504,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 style: GoogleFonts.poppins(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
-                                  color: kDarkRed,
+                                  color: kPrimaryBlack, // Changed to kPrimaryBlack
                                 ),
                               ),
                               const SizedBox(height: kMediumSpacing),
-                              _buildTextField(_currentPasswordController, 'Current Password', obscureText: true, editable: _isEditing),
-                              _buildTextField(_newPasswordController, 'New Password', obscureText: true, editable: _isEditing, validator: (value) {
-                                if (_newPasswordController.text.isNotEmpty && (value == null || value.length < 6)) {
-                                  return 'Password must be at least 6 characters';
-                                }
-                                return null;
-                              }),
-                              _buildTextField(_confirmNewPasswordController, 'Confirm New Password', obscureText: true, editable: _isEditing, validator: (value) {
-                                if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
-                                  return 'Passwords do not match';
-                                }
-                                return null;
-                              }),
+                              _buildTextField(
+                                controller: _currentPasswordController, // Added named parameter
+                                labelText: 'Current Password', // Added named parameter
+                                obscureText: true,
+                                editable: _isEditing,
+                              ),
+                              _buildTextField(
+                                controller: _newPasswordController, // Added named parameter
+                                labelText: 'New Password', // Added named parameter
+                                obscureText: true,
+                                editable: _isEditing,
+                                validator: (value) {
+                                  if (_newPasswordController.text.isNotEmpty && (value == null || value.length < 6)) {
+                                    return 'Password must be at least 6 characters';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              _buildTextField(
+                                controller: _confirmNewPasswordController, // Added named parameter
+                                labelText: 'Confirm New Password', // Added named parameter
+                                obscureText: true,
+                                editable: _isEditing,
+                                validator: (value) {
+                                  if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
+                                    return 'Passwords do not match';
+                                  }
+                                  return null;
+                                },
+                              ),
                             ],
                           ),
                         ),
@@ -514,7 +550,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       floatingActionButton: FloatingActionButton.extended( // FloatingActionButton for Logout
         onPressed: _signOut,
         backgroundColor: kRedError,
-        foregroundColor: kWhite,
+        foregroundColor: kPrimaryWhite, // Changed to kPrimaryWhite
         icon: const Icon(Icons.logout),
         label: Text(
           'Logout',
@@ -530,11 +566,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String hintText) {
+  InputDecoration _inputDecoration(String labelText, {Color? fillColor, BorderSide? focusedBorderSide}) {
     return InputDecoration(
-      hintText: hintText,
+      labelText: labelText, // Changed from hintText to labelText
+      labelStyle: GoogleFonts.poppins(color: kGrey), // Label style
       filled: true,
-      fillColor: kWhite,
+      fillColor: fillColor ?? kPrimaryWhite, // Use provided fillColor or default to kPrimaryWhite
       border: OutlineInputBorder(
         borderRadius: kSmallBorderRadius,
         borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
@@ -545,7 +582,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: kSmallBorderRadius,
-        borderSide: const BorderSide(color: kDarkRed, width: 2),
+        borderSide: focusedBorderSide ?? const BorderSide(color: kPrimaryYellow, width: 2), // Changed to kPrimaryYellow
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: kSmallBorderRadius,
@@ -559,7 +596,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String hintText, {bool obscureText = false, TextInputType keyboardType = TextInputType.text, bool editable = true, String? Function(String?)? validator}) {
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String labelText, // Changed from hintText to labelText
+    bool obscureText = false,
+    TextInputType keyboardType = TextInputType.text,
+    bool editable = true,
+    String? Function(String?)? validator,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: TextFormField(
@@ -567,9 +611,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         obscureText: obscureText,
         keyboardType: keyboardType,
         readOnly: !editable,
-        style: GoogleFonts.poppins(color: editable ? kBlack : kGrey),
-        decoration: _inputDecoration(hintText).copyWith(
-          fillColor: editable ? kWhite : kLightGrey, // Visual feedback for editable state
+        style: GoogleFonts.poppins(color: editable ? kPrimaryBlack : kGrey), // Changed to kPrimaryBlack
+        decoration: _inputDecoration(
+          labelText, // Pass labelText
+          fillColor: editable ? kPrimaryWhite : kLightGrey, // Visual feedback for editable state
+          focusedBorderSide: BorderSide(color: kPrimaryYellow, width: 2), // Consistent focused border
         ),
         validator: validator,
       ),
@@ -584,7 +630,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Text(
             'Gender',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kPrimaryBlack), // Changed to kPrimaryBlack
           ),
           const SizedBox(height: kSmallSpacing),
           Row(
@@ -597,9 +643,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _gender = value!;
                   });
                 } : null, // Disabled if not editing
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow, // Changed to kPrimaryYellow
               ),
-              Text('Male', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
+              Text('Male', style: GoogleFonts.poppins(color: _isEditing ? kPrimaryBlack : kGrey)), // Changed to kPrimaryBlack
               const SizedBox(width: kMediumSpacing),
               Radio<String>(
                 value: 'Female',
@@ -609,21 +655,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _gender = value!;
                   });
                 } : null, // Disabled if not editing
-                activeColor: kDarkRed,
+                activeColor: kPrimaryYellow, // Changed to kPrimaryYellow
               ),
-              Text('Female', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
-              const SizedBox(width: kMediumSpacing),
-              Radio<String>(
-                value: 'Other',
-                groupValue: _gender,
-                onChanged: _isEditing ? (String? value) {
-                  setState(() {
-                    _gender = value!;
-                  });
-                } : null, // Disabled if not editing
-                activeColor: kDarkRed,
-              ),
-              Text('Other', style: GoogleFonts.poppins(color: _isEditing ? kBlack : kGrey)), // Text color changes
+              Text('Female', style: GoogleFonts.poppins(color: _isEditing ? kPrimaryBlack : kGrey)), // Changed to kPrimaryBlack
+              const SizedBox(width: kMediumSpacing),// Changed to kPrimaryBlack
             ],
           ),
         ],

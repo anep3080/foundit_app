@@ -87,13 +87,17 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     }
   }
 
+  // This is the core change: using the path structure from your old working code
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final String fileName = '${const Uuid().v4()}${p.extension(imageFile.path)}';
+      // Construct the path with user ID subdirectory
       final String path = 'found_item_images/${supabaseService.currentUser!.id}/$fileName';
 
+      debugPrint('Supabase Storage Upload Path: $path'); // Debug print the path
+
       await supabaseService.client.storage
-          .from('item-image')
+          .from('item-image') // Ensure this bucket name is correct
           .upload(path, imageFile,
               fileOptions: const FileOptions(cacheControl: '3600', upsert: false));
 
@@ -159,6 +163,7 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
         return;
       }
 
+      // Insert data into 'found_items' table, using reporter_id and reporter_telegram_username
       await supabaseService.client.from('found_items').insert({
         'item_name': _itemNameController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -201,26 +206,25 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     _descriptionController.dispose();
     _foundLocationController.dispose();
     _dateFoundController.dispose();
-    // _telegramUsernameController.dispose(); // Removed as it's no longer used
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kPrimaryYellowGreen,
+      backgroundColor: kBackground, // Changed to kBackground for consistency
       appBar: AppBar(
-        backgroundColor: kDarkRed,
+        backgroundColor: kBackground, // Changed to kBackground for consistency
         title: Text(
           'Report Found Item',
           style: GoogleFonts.poppins(
-            color: kWhite,
+            color: kPrimaryBlack, // Changed to kPrimaryBlack for consistency
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kWhite),
+          icon: const Icon(Icons.arrow_back_ios, color: kPrimaryBlack), // Changed to kPrimaryBlack
           onPressed: () {
             Navigator.pop(context);
           },
@@ -231,9 +235,9 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
+                    child: CircularProgressIndicator(color: kPrimaryBlack, strokeWidth: 2), // Changed to kPrimaryBlack
                   )
-                : const Icon(Icons.check, color: kWhite),
+                : const Icon(Icons.check, color: kPrimaryBlack), // Changed to kPrimaryBlack
             onPressed: _isLoading ? null : _submitReport,
           ),
           const SizedBox(width: kSmallSpacing),
@@ -251,15 +255,15 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 style: GoogleFonts.poppins(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: kDarkRed,
+                  color: kPrimaryBlack, // Changed to kPrimaryBlack
                 ),
               ),
               const SizedBox(height: kLargeSpacing),
-              _buildImagePicker(),
+              _buildImagePicker(), // This method is now defined below
               const SizedBox(height: kLargeSpacing),
               _buildTextField(
-                _itemNameController,
-                'Item Name',
+                controller: _itemNameController, // Added named parameter
+                labelText: 'Item Name', // Added named parameter
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Item Name is required';
@@ -268,8 +272,8 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 },
               ),
               _buildTextField(
-                _descriptionController,
-                'Description',
+                controller: _descriptionController, // Added named parameter
+                labelText: 'Description', // Added named parameter
                 maxLines: 3,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
@@ -280,8 +284,8 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
               ),
               _buildCategoryDropdown(),
               _buildTextField(
-                _foundLocationController,
-                'Found Location',
+                controller: _foundLocationController, // Added named parameter
+                labelText: 'Found Location', // Added named parameter
                 validator: (value) {
                   if (value == null || value.isEmpty) {
                     return 'Found Location is required';
@@ -290,8 +294,22 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 },
               ),
               _buildDatePicker(),
-              // Removed the manual Telegram Username input field
               const SizedBox(height: kLargeSpacing),
+              Center(
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _submitReport,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimaryGreen,
+                    foregroundColor: kPrimaryWhite,
+                    padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                    elevation: 5,
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: kPrimaryWhite)
+                      : Text('Submit Report', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                ),
+              ),
             ],
           ),
         ),
@@ -299,6 +317,7 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     );
   }
 
+  // Moved _buildImagePicker inside the _ReportFoundFormScreenState class
   Widget _buildImagePicker() {
     return Center(
       child: GestureDetector(
@@ -335,9 +354,11 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hintText, {
+  // Renamed _buildTextField to include named parameters for consistency
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String labelText,
+    String? hintText,
     bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
@@ -350,11 +371,12 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
         obscureText: obscureText,
         keyboardType: keyboardType,
         maxLines: maxLines,
-        style: GoogleFonts.poppins(color: kBlack),
+        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
         decoration: InputDecoration(
+          labelText: labelText, // Changed from hintText to labelText
           hintText: hintText,
           filled: true,
-          fillColor: kWhite,
+          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
@@ -365,7 +387,7 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kDarkRed, width: 2),
+            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -388,9 +410,9 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
       child: DropdownButtonFormField<String>(
         value: _selectedCategory,
         decoration: InputDecoration(
-          hintText: 'Select Category',
+          labelText: 'Select Category', // Changed from hintText to labelText
           filled: true,
-          fillColor: kWhite,
+          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
@@ -401,7 +423,7 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kDarkRed, width: 2),
+            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -413,13 +435,13 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
-        dropdownColor: kLightYellow,
-        style: GoogleFonts.poppins(color: kBlack),
+        dropdownColor: kBackground, // Changed to kBackground
+        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
         icon: const Icon(Icons.arrow_drop_down, color: kGrey),
         items: _categories.map((String category) {
           return DropdownMenuItem<String>(
             value: category,
-            child: Text(capitalizeFirstLetter(category)), // Use helper function
+            child: Text(capitalizeFirstLetter(category), style: GoogleFonts.poppins(color: kPrimaryBlack)), // Ensure text color
           );
         }).toList(),
         onChanged: (String? newValue) {
@@ -443,11 +465,11 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
       child: TextFormField(
         controller: _dateFoundController,
         readOnly: true,
-        style: GoogleFonts.poppins(color: kBlack),
+        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
         decoration: InputDecoration(
-          hintText: 'Date Found',
+          labelText: 'Date Found', // Changed from hintText to labelText
           filled: true,
-          fillColor: kWhite,
+          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
@@ -458,7 +480,7 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kDarkRed, width: 2),
+            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
           ),
           suffixIcon: IconButton(
             icon: const Icon(Icons.calendar_today, color: kGrey),
@@ -471,14 +493,14 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 builder: (context, child) {
                   return Theme(
                     data: Theme.of(context).copyWith(
-                      colorScheme: ColorScheme.light(
-                        primary: kDarkRed, // Header background color
-                        onPrimary: kWhite, // Header text color
-                        onSurface: kBlack, // Body text color
+                      colorScheme: const ColorScheme.light(
+                        primary: kPrimaryBlack, // Header background color
+                        onPrimary: kPrimaryWhite, // Header text color
+                        onSurface: kPrimaryBlack, // Body text color
                       ),
                       textButtonTheme: TextButtonThemeData(
                         style: TextButton.styleFrom(
-                          foregroundColor: kDarkRed, // Button text color
+                          foregroundColor: kPrimaryBlack, // Button text color
                         ),
                       ),
                     ),
