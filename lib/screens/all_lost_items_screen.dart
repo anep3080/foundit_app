@@ -50,10 +50,8 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
         query = query.ilike('item_name', '%$_searchQuery%');
       }
 
-      final List<Map<String, dynamic>> response = await query.order(
-        'created_at',
-        ascending: false,
-      ); // Order by most recent
+      final List<Map<String, dynamic>> response = await query
+          .order('created_at', ascending: false); // Order by most recent
 
       setState(() {
         _lostItems = response;
@@ -89,26 +87,21 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
           },
         ),
       ),
-      body: Column(
-        // Use Column to place search bar above the list
+      body: Column( // Use Column to place search bar above the list
         children: [
           Padding(
             padding: kDefaultPadding.copyWith(bottom: 0), // Adjust padding
             child: _buildSearchBar(),
           ),
           const SizedBox(height: kMediumSpacing),
-          Expanded(
-            // Expanded to fill remaining space
+          Expanded( // Expanded to fill remaining space
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: kDarkRed),
-                  )
+                ? const Center(child: CircularProgressIndicator(color: kDarkRed))
                 : RefreshIndicator(
                     onRefresh: _fetchAllLostItems,
                     child: _lostItems.isEmpty
                         ? Center(
-                            child: SingleChildScrollView(
-                              // Allow scrolling for empty state
+                            child: SingleChildScrollView( // Allow scrolling for empty state
                               physics: const AlwaysScrollableScrollPhysics(),
                               padding: kDefaultPadding,
                               child: Column(
@@ -125,10 +118,7 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
                                         ? 'No matching lost items found.'
                                         : 'No lost items found.',
                                     textAlign: TextAlign.center,
-                                    style: GoogleFonts.poppins(
-                                      color: kGrey,
-                                      fontSize: kBodySmall.fontSize,
-                                    ),
+                                    style: GoogleFonts.poppins(color: kGrey, fontSize: kBodySmall.fontSize),
                                   ),
                                 ],
                               ),
@@ -141,8 +131,7 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
                               final item = _lostItems[index];
                               return _buildItemCard(
                                 context,
-                                item['id']
-                                    as String, // Explicitly cast to String
+                                item['id'] as String, // Explicitly cast to String
                                 item['item_name'],
                                 item['description'],
                                 item['image_url'],
@@ -166,16 +155,10 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
       ),
       child: TextField(
         controller: _searchController,
-        style: GoogleFonts.poppins(
-          color: kBlack,
-          fontSize: kBodyMedium.fontSize,
-        ),
+        style: GoogleFonts.poppins(color: kBlack, fontSize: kBodyMedium.fontSize),
         decoration: InputDecoration(
           hintText: 'Search for lost items...',
-          hintStyle: GoogleFonts.poppins(
-            color: kGrey,
-            fontSize: kBodyMedium.fontSize,
-          ),
+          hintStyle: GoogleFonts.poppins(color: kGrey, fontSize: kBodyMedium.fontSize),
           prefixIcon: Icon(Icons.search, color: kGrey),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -265,7 +248,10 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
                     const SizedBox(height: 4),
                     Text(
                       description,
-                      style: GoogleFonts.poppins(fontSize: 14, color: kGrey),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: kGrey,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -288,8 +274,7 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
     Color statusColor;
     String statusText;
 
-    switch (status.toLowerCase().trim()) {
-      // Ensure consistent comparison
+    switch (status.toLowerCase().trim()) { // Ensure consistent comparison
       case 'not found': // Corrected from 'not_found'
         statusColor = kRedError;
         statusText = 'Not Found';
@@ -334,6 +319,5 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
 }
 
 extension StringExtension on String {
-  String toCapitalized() =>
-      length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
+  String toCapitalized() => length > 0 ? '${this[0].toUpperCase()}${substring(1).toLowerCase()}' : '';
 }

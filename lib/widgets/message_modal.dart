@@ -24,8 +24,9 @@ class MessageModal extends StatelessWidget {
 
     return AlertDialog(
       backgroundColor: kWhite,
+      // Use kDefaultBorderRadius for consistency
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: kDefaultBorderRadius,
         side: BorderSide(color: borderColor, width: 2),
       ),
       contentPadding: const EdgeInsets.all(30),
@@ -36,11 +37,11 @@ class MessageModal extends StatelessWidget {
             alignment: Alignment.topRight,
             child: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: const Icon(Icons.close, color: Colors.grey, size: 28),
+              child: const Icon(Icons.close, color: kGrey, size: 28), // Use kGrey for consistency
             ),
           ),
           Icon(icon, color: iconColor, size: 48),
-          const SizedBox(height: 15),
+          const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
           Text(
             title,
             style: GoogleFonts.poppins(
@@ -49,7 +50,7 @@ class MessageModal extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: kMediumSpacing), // Use kMediumSpacing
           Text(
             message,
             textAlign: TextAlign.center,

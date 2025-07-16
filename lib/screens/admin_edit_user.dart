@@ -22,12 +22,9 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
   final TextEditingController _phoneNumberController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _countryController = TextEditingController();
-  final TextEditingController _telegramUsernameController =
-      TextEditingController();
-  final TextEditingController _newPasswordController =
-      TextEditingController(); // For admin-initiated password reset
-  final TextEditingController _confirmNewPasswordController =
-      TextEditingController();
+  final TextEditingController _telegramUsernameController = TextEditingController();
+  final TextEditingController _newPasswordController = TextEditingController(); // For admin-initiated password reset
+  final TextEditingController _confirmNewPasswordController = TextEditingController();
 
   String _gender = 'Male';
   String _userType = 'user'; // 'user' or 'admin'
@@ -59,6 +56,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
       _telegramUsernameController.text = userData['telegram_username'] ?? '';
       _gender = userData['gender'] ?? 'Male';
       _userType = userData['user_type'] ?? 'user';
+
     } catch (e) {
       debugPrint('Error fetching user details for admin edit: $e');
       MessageModal.show(
@@ -94,9 +92,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
             'Password Mismatch',
             'New password and confirm new password do not match.',
           );
-          setState(() {
-            _isLoading = false;
-          });
+          setState(() { _isLoading = false; });
           return;
         }
         // Admin initiating password update for another user.
@@ -106,12 +102,8 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
         // For this example, we'll simulate it by showing a success message,
         // but a direct client-side update of another user's password is not possible.
         // If you need this, you'll need to implement a Supabase Function.
-        MessageModal.show(
-          context,
-          MessageType.success,
-          'Password Reset Initiated',
-          'Password reset for this user would be handled via an admin API or function (not directly supported client-side).',
-        );
+        MessageModal.show(context, MessageType.success, 'Password Reset Initiated',
+            'Password reset for this user would be handled via an admin API or function (not directly supported client-side).');
         _newPasswordController.clear();
         _confirmNewPasswordController.clear();
       }
@@ -194,10 +186,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(
-                      color: kWhite,
-                      strokeWidth: 2,
-                    ),
+                    child: CircularProgressIndicator(color: kWhite, strokeWidth: 2),
                   )
                 : const Icon(Icons.check, color: kWhite),
             onPressed: _isLoading ? null : _updateUser,
@@ -205,11 +194,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
           const SizedBox(width: kSmallSpacing), // Consistent spacing
         ],
       ),
-      body:
-          _isLoading &&
-              _fullNameController
-                  .text
-                  .isEmpty // Show loading only when initially fetching
+      body: _isLoading && _fullNameController.text.isEmpty // Show loading only when initially fetching
           ? const Center(child: CircularProgressIndicator(color: kDarkRed))
           : SingleChildScrollView(
               padding: kDefaultPadding, // Use kDefaultPadding
@@ -237,11 +222,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                         return null;
                       },
                     ),
-                    _buildTextField(
-                      _emailController,
-                      'Email',
-                      editable: false,
-                    ), // Email usually not editable
+                    _buildTextField(_emailController, 'Email', editable: false), // Email usually not editable
                     _buildTextField(
                       _phoneNumberController,
                       'Phone Number',
@@ -260,10 +241,7 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                       _buildTextField(_cityController, 'City'),
                       _buildTextField(_countryController, 'Country'),
                     ]),
-                    _buildTextField(
-                      _telegramUsernameController,
-                      'Telegram Username',
-                    ),
+                    _buildTextField(_telegramUsernameController, 'Telegram Username'),
                     _buildGenderRadioButtons(),
                     _buildUserTypeRadioButtons(),
                     const SizedBox(height: kLargeSpacing), // Consistent spacing
@@ -275,33 +253,19 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
                         color: kDarkRed,
                       ),
                     ),
-                    const SizedBox(
-                      height: kMediumSpacing,
-                    ), // Consistent spacing
-                    _buildTextField(
-                      _newPasswordController,
-                      'New Password',
-                      obscureText: true,
-                      validator: (value) {
-                        if (_newPasswordController.text.isNotEmpty &&
-                            (value == null || value.length < 6)) {
-                          return 'Password must be at least 6 characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    _buildTextField(
-                      _confirmNewPasswordController,
-                      'Confirm New Password',
-                      obscureText: true,
-                      validator: (value) {
-                        if (_newPasswordController.text.isNotEmpty &&
-                            value != _newPasswordController.text) {
-                          return 'Passwords do not match';
-                        }
-                        return null;
-                      },
-                    ),
+                    const SizedBox(height: kMediumSpacing), // Consistent spacing
+                    _buildTextField(_newPasswordController, 'New Password', obscureText: true, validator: (value) {
+                      if (_newPasswordController.text.isNotEmpty && (value == null || value.length < 6)) {
+                        return 'Password must be at least 6 characters';
+                      }
+                      return null;
+                    }),
+                    _buildTextField(_confirmNewPasswordController, 'Confirm New Password', obscureText: true, validator: (value) {
+                      if (_newPasswordController.text.isNotEmpty && value != _newPasswordController.text) {
+                        return 'Passwords do not match';
+                      }
+                      return null;
+                    }),
                     const SizedBox(height: kLargeSpacing), // Consistent spacing
                     // The save button is now in the AppBar
                   ],
@@ -311,18 +275,9 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
     );
   }
 
-  Widget _buildTextField(
-    TextEditingController controller,
-    String hintText, {
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-    bool editable = true,
-    String? Function(String?)? validator,
-  }) {
+  Widget _buildTextField(TextEditingController controller, String hintText, {bool obscureText = false, TextInputType keyboardType = TextInputType.text, bool editable = true, String? Function(String?)? validator}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: kSmallSpacing,
-      ), // Consistent spacing
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
       child: TextFormField(
         controller: controller,
         obscureText: obscureText,
@@ -343,25 +298,17 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius, // Use kSmallBorderRadius
-            borderSide: const BorderSide(
-              color: kDarkRed,
-              width: 2,
-            ), // Thicker border on focus
+            borderSide: const BorderSide(color: kDarkRed, width: 2), // Thicker border on focus
           ),
-          errorBorder: OutlineInputBorder(
-            // Error border style
+          errorBorder: OutlineInputBorder( // Error border style
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: kRedError, width: 2),
           ),
-          focusedErrorBorder: OutlineInputBorder(
-            // Focused error border style
+          focusedErrorBorder: OutlineInputBorder( // Focused error border style
             borderRadius: kSmallBorderRadius,
             borderSide: const BorderSide(color: kRedError, width: 2),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: kMediumSpacing,
-            vertical: kMediumSpacing,
-          ), // Consistent padding
+          contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing), // Consistent padding
         ),
         validator: validator,
       ),
@@ -370,18 +317,13 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
 
   Widget _buildGenderRadioButtons() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: kSmallSpacing,
-      ), // Consistent spacing
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Gender',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF333333),
-            ),
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
           ),
           const SizedBox(height: kSmallSpacing), // Consistent spacing
           Row(
@@ -430,18 +372,13 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
 
   Widget _buildUserTypeRadioButtons() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: kSmallSpacing,
-      ), // Consistent spacing
+      padding: const EdgeInsets.symmetric(vertical: kSmallSpacing), // Consistent spacing
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'User Type',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF333333),
-            ),
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF333333)),
           ),
           const SizedBox(height: kSmallSpacing), // Consistent spacing
           Row(
@@ -479,18 +416,10 @@ class _AdminEditUserScreenState extends State<AdminEditUserScreen> {
   Widget _buildFormRow(List<Widget> children) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: children
-          .map(
-            (child) => Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  right: kMediumSpacing,
-                ), // Consistent spacing
-                child: child,
-              ),
-            ),
-          )
-          .toList(),
+      children: children.map((child) => Expanded(child: Padding(
+        padding: const EdgeInsets.only(right: kMediumSpacing), // Consistent spacing
+        child: child,
+      ))).toList(),
     );
   }
 }
