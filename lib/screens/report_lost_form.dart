@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
-import '../ui_constants.dart';
+import '../ui_constants.dart'; // Import your constants
 import '../services/supabase_service.dart';
 import '../widgets/message_modal.dart';
 
@@ -34,11 +34,19 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
   String? _selectedCategory;
   File? _selectedImageFile;
   bool _isLoading = false;
-  String? _userTelegramUsername; // To store the user's Telegram username
+  String? _userTelegramUsername; // To store the fetched user's Telegram username
 
   final List<String> _categories = [
-    'Electronics', 'Documents', 'Clothing', 'Keys', 'Bags', 'Jewelry',
-    'Wallets', 'Books', 'Other'
+    'Electronics',
+    'Documents',
+    'Clothing',
+    'Accessories',
+    'Books',
+    'Keys',
+    'Wallets/Purses',
+    'Bags',
+    'Jewelry',
+    'Other',
   ];
 
   @override
@@ -66,9 +74,11 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
             .select('telegram_username')
             .eq('id', currentUser.id)
             .single();
-        setState(() {
-          _userTelegramUsername = profile['telegram_username'];
-        });
+        if (mounted) { // Guard against async gap
+          setState(() {
+            _userTelegramUsername = profile['telegram_username'];
+          });
+        }
       } catch (e) {
         debugPrint('Error fetching user telegram username: $e');
         // If fetching fails, userTelegramUsername remains null, which is handled
@@ -76,39 +86,75 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
+  // Method to show image source selection (Camera or Gallery)
+  Future<void> _showImageSourceSelection() async {
+    await showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a picture'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Modified _pickImage to accept ImageSource
+  Future<void> _pickImage(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70); // Added imageQuality
+    final XFile? image = await picker.pickImage(source: source, imageQuality: 70);
 
     if (image != null) {
-      setState(() {
-        _selectedImageFile = File(image.path);
-      });
+      if (mounted) { // Guard against async gap
+        setState(() {
+          _selectedImageFile = File(image.path);
+        });
+      }
     }
   }
 
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final String fileName = '${const Uuid().v4()}${p.extension(imageFile.path)}';
-      // Use a path that includes the user's ID, similar to old working code
+      // Corrected: Use 'item-image' bucket and 'lost_item_images' subfolder
       final String path = 'lost_item_images/${supabaseService.currentUser!.id}/$fileName';
 
-      // Debug prints for upload path
-      debugPrint('Supabase Storage Upload Path: $path');
-
       await supabaseService.client.storage
-          .from('item-image') // Ensure this bucket name is correct
-          .upload(path, imageFile, fileOptions: const FileOptions(cacheControl: '3600', upsert: false)); // Changed upsert to false
+          .from('item-image') // Corrected bucket name
+          .upload(path, imageFile, fileOptions: const FileOptions(cacheControl: '3600', upsert: false));
 
-      final String imageUrl = supabaseService.client.storage.from('item-image').getPublicUrl(path);
+      final String imageUrl = supabaseService.client.storage.from('item-image').getPublicUrl(path); // Corrected bucket name
       return imageUrl;
     } on StorageException catch (e) {
       debugPrint('Error uploading image to Supabase Storage: ${e.message}');
-      MessageModal.show(context, MessageType.error, 'Upload Failed', 'Failed to upload image: ${e.message}');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Upload Failed', 'Failed to upload image: ${e.message}');
+      }
       return null;
     } catch (e) {
       debugPrint('General image upload error: $e');
-      MessageModal.show(context, MessageType.error, 'Upload Failed', 'An unexpected error occurred during image upload: $e');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Upload Failed', 'An unexpected error occurred during image upload: $e');
+      }
       return null;
     }
   }
@@ -119,7 +165,9 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
     }
 
     if (_selectedImageFile == null) {
-      MessageModal.show(context, MessageType.error, 'Error', 'Please select an image for the item.');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Error', 'Please select an image for the item.');
+      }
       return;
     }
 
@@ -128,34 +176,26 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
     });
 
     String? imageUrl;
-    // Call the new _uploadImage method
     if (_selectedImageFile != null) {
       imageUrl = await _uploadImage(_selectedImageFile!);
       if (imageUrl == null) {
-        setState(() { _isLoading = false; });
+        if (mounted) { // Guard against async gap
+          setState(() { _isLoading = false; });
+        }
         return; // Stop if image upload failed
       }
     }
 
-
     try {
       final User? currentUser = supabaseService.currentUser;
       if (currentUser == null) {
-        MessageModal.show(context, MessageType.error, 'Error', 'You must be logged in to report an item.');
-        setState(() { _isLoading = false; });
+        if (mounted) { // Guard against async gap
+          MessageModal.show(context, MessageType.error, 'Error', 'You must be logged in to report an item.');
+          setState(() { _isLoading = false; });
+        }
         return;
       }
 
-      // Debug prints before insert
-      debugPrint('Inserting lost item data...');
-      debugPrint('Item Name: ${_itemNameController.text.trim()}');
-      debugPrint('Category: $_selectedCategory');
-      debugPrint('Image URL: $imageUrl');
-      debugPrint('Reporter ID: ${currentUser.id}');
-      debugPrint('Reporter Telegram Username: $_userTelegramUsername');
-
-
-      // Insert data into 'lost_items' table
       await supabaseService.client.from('lost_items').insert({
         'item_name': _itemNameController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -163,171 +203,177 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
         'lost_location': _lostLocationController.text.trim(),
         'date_lost': _dateLostController.text,
         'image_url': imageUrl,
-        'reporter_id': currentUser.id, // Changed from user_id to reporter_id
-        // Removed 'reporter_name' as per your request
-        'reporter_telegram_username': _userTelegramUsername, // Explicitly add telegram username
-        'status': 'not found', // Default status
+        'reporter_id': currentUser.id,
+        'reporter_telegram_username': _userTelegramUsername,
+        'status': 'not_found', // Default status
       });
 
-      MessageModal.show(context, MessageType.success, 'Success', 'Lost item reported successfully!');
-      Navigator.pop(context); // Go back to previous screen
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.success,
+          'Report Success!',
+          'Your lost item has been reported successfully!',
+        );
+        Navigator.pop(context); // Go back to previous screen (Homepage)
+      }
     } on StorageException catch (e) {
       debugPrint('Supabase Storage Error: ${e.message}');
-      MessageModal.show(context, MessageType.error, 'Upload Failed', 'Failed to upload image: ${e.message}');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Upload Failed', 'Failed to upload image: ${e.message}');
+      }
     } on PostgrestException catch (e) {
       debugPrint('Supabase Database Error: ${e.message}');
-      MessageModal.show(context, MessageType.error, 'Submission Failed', 'Failed to submit report: ${e.message}');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Submission Failed', 'Failed to submit report: ${e.message}');
+      }
     } catch (e) {
       debugPrint('General Error: $e');
-      MessageModal.show(context, MessageType.error, 'Error', 'An unexpected error occurred: $e');
+      if (mounted) { // Guard against async gap
+        MessageModal.show(context, MessageType.error, 'Error', 'An unexpected error occurred: $e');
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) { // Guard against async gap
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Use theme background color
       appBar: AppBar(
-        backgroundColor: kBackground,
-        elevation: 0,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor, // Use theme AppBar color
         title: Text(
           'Report Lost Item',
           style: GoogleFonts.poppins(
-            color: kPrimaryBlack,
+            color: Theme.of(context).appBarTheme.foregroundColor, // Use theme AppBar text color
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
-          onPressed: () => Navigator.of(context).pop(),
+          icon: Icon(Icons.arrow_back_ios, color: Theme.of(context).appBarTheme.foregroundColor),
+          onPressed: () {
+            Navigator.pop(context);
+          },
         ),
         actions: [
-          IconButton(
+          IconButton( // Replaced NeumorphicButton with IconButton
+            onPressed: _isLoading ? null : _submitReport,
             icon: _isLoading
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: kPrimaryBlack, strokeWidth: 2),
+                    child: CircularProgressIndicator(color: kBlack, strokeWidth: 2),
                   )
-                : const Icon(Icons.check, color: kPrimaryBlack),
-            onPressed: _isLoading ? null : _submitReport,
+                : const Icon(Icons.check, color: kBlack),
           ),
           const SizedBox(width: kSmallSpacing),
         ],
       ),
       body: SingleChildScrollView(
         padding: kDefaultPadding,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Item Details',
-                style: GoogleFonts.poppins(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: kPrimaryBlack,
-                ),
-              ),
-              const SizedBox(height: kLargeSpacing),
-              _buildImagePicker(), // This method is now defined below
-              const SizedBox(height: kLargeSpacing),
-              _buildTextField(
-                controller: _itemNameController,
-                labelText: 'Item Name',
-                hintText: 'e.g., Black Wallet',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Item Name is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildTextField(
-                controller: _descriptionController,
-                labelText: 'Description',
-                hintText: 'e.g., Contains ID card and some cash',
-                maxLines: 3,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Description is required';
-                  }
-                  return null;
-                },
-              ),
-              // Corrected call to _buildCategoryDropdown with required parameters
-              _buildCategoryDropdown(
-                labelText: 'Category',
-                value: _selectedCategory,
-                items: _categories,
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedCategory = newValue;
-                  });
-                },
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Category is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildTextField(
-                controller: _lostLocationController,
-                labelText: 'Lost Location',
-                hintText: 'e.g., Lecture Hall 1, Main Library',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Lost Location is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildDateField(
-                controller: _dateLostController,
-                labelText: 'Date Lost',
-              ),
-              const SizedBox(height: kLargeSpacing),
-              Center(
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitReport,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryGreen,
-                    foregroundColor: kPrimaryWhite,
-                    padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
-                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-                    elevation: 5,
+        child: Container( // Replaced NeumorphicButton with Container
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback
+            borderRadius: kDefaultBorderRadius,
+            boxShadow: const [kNeumorphicShadowDark, kNeumorphicShadowLight],
+          ),
+          padding: kDefaultPadding,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Item Details',
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryYellow, // Use primary yellow
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: kPrimaryWhite)
-                      : Text('Submit Report', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
                 ),
-              ),
-            ],
+                const SizedBox(height: kLargeSpacing),
+                _buildImagePicker(),
+                const SizedBox(height: kLargeSpacing),
+                _buildTextField(
+                  _itemNameController,
+                  'Item Name',
+                  Icons.label, // Added icon
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Item Name is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildTextField(
+                  _descriptionController,
+                  'Description',
+                  Icons.description, // Added icon
+                  maxLines: 3,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Description is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildCategoryDropdown(),
+                _buildTextField(
+                  _lostLocationController,
+                  'Lost Location',
+                  Icons.location_on, // Added icon
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Lost Location is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildDatePicker(),
+                const SizedBox(height: kLargeSpacing),
+                Center(
+                  child: ElevatedButton( // Replaced NeumorphicButton with ElevatedButton
+                    onPressed: _isLoading ? null : _submitReport,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryYellow, // Yellow button
+                      foregroundColor: kBlack, // Black text
+                      padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                      shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                      elevation: 5, // Add some elevation for a raised effect
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: kBlack)
+                        : Text(
+                            'Submit Report',
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Moved _buildImagePicker inside the _ReportLostFormScreenState class
   Widget _buildImagePicker() {
     return Center(
-      child: GestureDetector(
-        onTap: _pickImage,
+      child: GestureDetector( // Replaced NeumorphicButton with GestureDetector
+        onTap: _showImageSourceSelection, // Call the new method
         child: Container(
           width: double.infinity,
           height: 200,
           decoration: BoxDecoration(
-            color: kLightGrey,
+            color: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback
             borderRadius: kDefaultBorderRadius,
-            border: Border.all(color: kGrey, width: 1),
+            boxShadow: const [kNeumorphicShadowDark, kNeumorphicShadowLight], // Apply neumorphic shadows
             image: _selectedImageFile != null
                 ? DecorationImage(
                     image: FileImage(_selectedImageFile!),
@@ -353,34 +399,39 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String labelText,
-    String? hintText,
-    int maxLines = 1,
+  Widget _buildTextField(
+    TextEditingController controller,
+    String hintText,
+    IconData icon, { // Added icon parameter
+    bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
     String? Function(String?)? validator,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: TextFormField(
         controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback
         decoration: InputDecoration(
-          labelText: labelText,
           hintText: hintText,
+          prefixIcon: Icon(icon, color: kGrey), // Use icon parameter
           filled: true,
-          fillColor: kPrimaryWhite,
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -392,41 +443,32 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
-        maxLines: maxLines,
-        keyboardType: keyboardType,
-        style: GoogleFonts.poppins(color: kPrimaryBlack),
         validator: validator,
       ),
     );
   }
 
-  // Moved _buildCategoryDropdown inside the _ReportLostFormScreenState class
-  Widget _buildCategoryDropdown({
-    required String labelText,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-    String? Function(String?)? validator,
-  }) {
+  Widget _buildCategoryDropdown() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: DropdownButtonFormField<String>(
-        value: value,
+        value: _selectedCategory,
         decoration: InputDecoration(
-          labelText: labelText,
+          hintText: 'Select Category',
+          prefixIcon: Icon(Icons.category, color: kGrey), // Added icon
           filled: true,
-          fillColor: kPrimaryWhite,
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -438,49 +480,59 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
-        dropdownColor: kBackground,
-        style: GoogleFonts.poppins(color: kPrimaryBlack),
-        icon: const Icon(Icons.arrow_drop_down, color: kGrey),
-        items: items.map((String category) {
+        dropdownColor: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback
+        icon: Icon(Icons.arrow_drop_down, color: kGrey),
+        items: _categories.map((String category) {
           return DropdownMenuItem<String>(
             value: category,
-            child: Text(capitalizeFirstLetter(category), style: GoogleFonts.poppins(color: kPrimaryBlack)),
+            child: Text(
+              capitalizeFirstLetter(category),
+              style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback
+            ),
           );
         }).toList(),
-        onChanged: onChanged,
-        validator: validator,
+        onChanged: (String? newValue) {
+          setState(() {
+            _selectedCategory = newValue;
+          });
+        },
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            return 'Category is required';
+          }
+          return null;
+        },
       ),
     );
   }
 
-  Widget _buildDateField({
-    required TextEditingController controller,
-    required String labelText,
-  }) {
+  Widget _buildDatePicker() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSmallSpacing),
       child: TextFormField(
-        controller: controller,
+        controller: _dateLostController,
         readOnly: true,
-        style: GoogleFonts.poppins(color: kPrimaryBlack),
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback
         decoration: InputDecoration(
-          labelText: labelText,
+          hintText: 'Date Lost',
+          prefixIcon: Icon(Icons.calendar_today, color: kGrey), // Added icon
           filled: true,
-          fillColor: kPrimaryWhite,
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.calendar_today, color: kGrey),
+            icon: Icon(Icons.calendar_today, color: kGrey),
             onPressed: () async {
               DateTime? pickedDate = await showDatePicker(
                 context: context,
@@ -490,25 +542,29 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
                 builder: (context, child) {
                   return Theme(
                     data: Theme.of(context).copyWith(
-                      colorScheme: const ColorScheme.light(
-                        primary: kPrimaryBlack, // Header background color
-                        onPrimary: kPrimaryWhite, // Header text color
-                        onSurface: kPrimaryBlack, // Body text color
+                      colorScheme: ColorScheme.light( // Ensure date picker theme matches app theme
+                        primary: kPrimaryYellow, // Header background color
+                        onPrimary: kBlack, // Header text color
+                        onSurface: Theme.of(context).textTheme.bodyMedium?.color ?? kBlack, // Body text color, with fallback
                       ),
                       textButtonTheme: TextButtonThemeData(
                         style: TextButton.styleFrom(
-                          foregroundColor: kPrimaryBlack, // Button text color
+                          foregroundColor: kPrimaryYellow, // Button text color
                         ),
                       ),
+                      // For dark mode, you might need to adjust more properties like dialogBackgroundColor
+                      dialogBackgroundColor: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback
                     ),
                     child: child!,
                   );
                 },
               );
               if (pickedDate != null) {
-                setState(() {
-                  controller.text = pickedDate.toLocal().toString().split(' ')[0];
-                });
+                if (mounted) { // Guard against async gap
+                  setState(() {
+                    _dateLostController.text = pickedDate.toLocal().toString().split(' ')[0];
+                  });
+                }
               }
             },
           ),

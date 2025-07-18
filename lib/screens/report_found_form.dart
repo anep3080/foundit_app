@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
-import '../ui_constants.dart';
+import '../ui_constants.dart'; // Import your constants
 import '../services/supabase_service.dart';
 import '../widgets/message_modal.dart';
 
@@ -66,9 +66,11 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
             .select('telegram_username')
             .eq('id', currentUser.id)
             .single();
-        setState(() {
-          _userTelegramUsername = profile['telegram_username'];
-        });
+        if (mounted) { // Guard against async gap
+          setState(() {
+            _userTelegramUsername = profile['telegram_username'];
+          });
+        }
       } catch (e) {
         debugPrint('Error fetching user telegram username: $e');
         // If there's an error, _userTelegramUsername will remain null
@@ -76,53 +78,89 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
+  // Method to show image source selection (Camera or Gallery)
+  Future<void> _showImageSourceSelection() async {
+    await showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take a picture'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Modified _pickImage to accept ImageSource
+  Future<void> _pickImage(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final XFile? image = await picker.pickImage(source: source, imageQuality: 70);
 
     if (image != null) {
-      setState(() {
-        _selectedImageFile = File(image.path);
-      });
+      if (mounted) { // Guard against async gap
+        setState(() {
+          _selectedImageFile = File(image.path);
+        });
+      }
     }
   }
 
-  // This is the core change: using the path structure from your old working code
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final String fileName = '${const Uuid().v4()}${p.extension(imageFile.path)}';
-      // Construct the path with user ID subdirectory
+      // Corrected: Use 'item-image' bucket and 'found_item_images' subfolder
       final String path = 'found_item_images/${supabaseService.currentUser!.id}/$fileName';
 
-      debugPrint('Supabase Storage Upload Path: $path'); // Debug print the path
-
       await supabaseService.client.storage
-          .from('item-image') // Ensure this bucket name is correct
+          .from('item-image') // Corrected bucket name
           .upload(path, imageFile,
               fileOptions: const FileOptions(cacheControl: '3600', upsert: false));
 
       final String imageUrl = supabaseService.client.storage
-          .from('item-image')
+          .from('item-image') // Corrected bucket name
           .getPublicUrl(path);
 
       return imageUrl;
     } on StorageException catch (e) {
       debugPrint('Error uploading image to Supabase Storage: ${e.message}');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Upload Failed',
-        'Failed to upload image: ${e.message}',
-      );
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.error,
+          'Upload Failed',
+          'Failed to upload image: ${e.message}',
+        );
+      }
       return null;
     } catch (e) {
       debugPrint('General image upload error: $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Upload Failed',
-        'An unexpected error occurred during image upload: $e',
-      );
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.error,
+          'Upload Failed',
+          'An unexpected error occurred during image upload: $e',
+        );
+      }
       return null;
     }
   }
@@ -133,12 +171,14 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     }
 
     if (_selectedImageFile == null) {
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Missing Image',
-        'Please select an image for the found item.',
-      );
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.error,
+          'Missing Image',
+          'Please select an image for the found item.',
+        );
+      }
       return;
     }
 
@@ -150,7 +190,9 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     if (_selectedImageFile != null) {
       imageUrl = await _uploadImage(_selectedImageFile!);
       if (imageUrl == null) {
-        setState(() { _isLoading = false; });
+        if (mounted) { // Guard against async gap
+          setState(() { _isLoading = false; });
+        }
         return; // Stop if image upload failed
       }
     }
@@ -158,12 +200,13 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     try {
       final User? currentUser = supabaseService.currentUser;
       if (currentUser == null) {
-        MessageModal.show(context, MessageType.error, 'Error', 'You must be logged in to report an item.');
-        setState(() { _isLoading = false; });
+        if (mounted) { // Guard against async gap
+          MessageModal.show(context, MessageType.error, 'Error', 'You must be logged in to report an item.');
+          setState(() { _isLoading = false; });
+        }
         return;
       }
 
-      // Insert data into 'found_items' table, using reporter_id and reporter_telegram_username
       await supabaseService.client.from('found_items').insert({
         'item_name': _itemNameController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -176,27 +219,31 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
         'status': 'unclaimed', // Default status for new found items
       });
 
-      MessageModal.show(
-        context,
-        MessageType.success,
-        'Success!',
-        'Found item reported successfully. Thank you!',
-      );
-      if (mounted) {
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.success,
+          'Report Success!',
+          'Your found item has been reported successfully!',
+        );
         Navigator.pop(context); // Go back to the previous screen (Homepage)
       }
     } catch (e) {
       debugPrint('Error submitting found item report: $e');
-      MessageModal.show(
-        context,
-        MessageType.error,
-        'Submission Failed',
-        'Failed to report found item: ${e.toString()}',
-      );
+      if (mounted) { // Guard against async gap
+        MessageModal.show(
+          context,
+          MessageType.error,
+          'Submission Failed',
+          'Failed to report found item: ${e.toString()}',
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) { // Guard against async gap
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -212,123 +259,136 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground, // Changed to kBackground for consistency
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Use theme background color
       appBar: AppBar(
-        backgroundColor: kBackground, // Changed to kBackground for consistency
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor, // Use theme AppBar color
         title: Text(
           'Report Found Item',
           style: GoogleFonts.poppins(
-            color: kPrimaryBlack, // Changed to kPrimaryBlack for consistency
+            color: Theme.of(context).appBarTheme.foregroundColor, // Use theme AppBar text color
             fontWeight: FontWeight.bold,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kPrimaryBlack), // Changed to kPrimaryBlack
+          icon: Icon(Icons.arrow_back_ios, color: Theme.of(context).appBarTheme.foregroundColor),
           onPressed: () {
             Navigator.pop(context);
           },
         ),
         actions: [
-          IconButton(
+          IconButton( // Replaced NeumorphicButton with IconButton
+            onPressed: _isLoading ? null : _submitReport,
             icon: _isLoading
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(color: kPrimaryBlack, strokeWidth: 2), // Changed to kPrimaryBlack
+                    child: CircularProgressIndicator(color: kBlack, strokeWidth: 2), // kBlack is now defined
                   )
-                : const Icon(Icons.check, color: kPrimaryBlack), // Changed to kPrimaryBlack
-            onPressed: _isLoading ? null : _submitReport,
+                : const Icon(Icons.check, color: kBlack), // kBlack is now defined
           ),
           const SizedBox(width: kSmallSpacing),
         ],
       ),
       body: SingleChildScrollView(
         padding: kDefaultPadding,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Item Details',
-                style: GoogleFonts.poppins(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: kPrimaryBlack, // Changed to kPrimaryBlack
-                ),
-              ),
-              const SizedBox(height: kLargeSpacing),
-              _buildImagePicker(), // This method is now defined below
-              const SizedBox(height: kLargeSpacing),
-              _buildTextField(
-                controller: _itemNameController, // Added named parameter
-                labelText: 'Item Name', // Added named parameter
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Item Name is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildTextField(
-                controller: _descriptionController, // Added named parameter
-                labelText: 'Description', // Added named parameter
-                maxLines: 3,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Description is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildCategoryDropdown(),
-              _buildTextField(
-                controller: _foundLocationController, // Added named parameter
-                labelText: 'Found Location', // Added named parameter
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Found Location is required';
-                  }
-                  return null;
-                },
-              ),
-              _buildDatePicker(),
-              const SizedBox(height: kLargeSpacing),
-              Center(
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitReport,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryGreen,
-                    foregroundColor: kPrimaryWhite,
-                    padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
-                    shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
-                    elevation: 5,
+        child: Container( // Replaced NeumorphicButton with Container
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback, kCardColor is now defined
+            borderRadius: kDefaultBorderRadius,
+            boxShadow: const [kNeumorphicShadowDark, kNeumorphicShadowLight],
+          ),
+          padding: kDefaultPadding,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Item Details',
+                  style: GoogleFonts.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: kPrimaryYellow, // Use primary yellow
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: kPrimaryWhite)
-                      : Text('Submit Report', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
                 ),
-              ),
-            ],
+                const SizedBox(height: kLargeSpacing),
+                _buildImagePicker(),
+                const SizedBox(height: kLargeSpacing),
+                _buildTextField(
+                  _itemNameController,
+                  'Item Name',
+                  Icons.label, // Added icon
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Item Name is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildTextField(
+                  _descriptionController,
+                  'Description',
+                  Icons.description, // Added icon
+                  maxLines: 3,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Description is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildCategoryDropdown(),
+                _buildTextField(
+                  _foundLocationController,
+                  'Found Location',
+                  Icons.location_on, // Added icon
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Found Location is required';
+                    }
+                    return null;
+                  },
+                ),
+                _buildDatePicker(),
+                const SizedBox(height: kLargeSpacing),
+                Center(
+                  child: ElevatedButton( // Replaced NeumorphicButton with ElevatedButton
+                    onPressed: _isLoading ? null : _submitReport,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimaryYellow, // Yellow button
+                      foregroundColor: kBlack, // Black text, kBlack is now defined
+                      padding: const EdgeInsets.symmetric(horizontal: kLargeSpacing, vertical: kMediumSpacing),
+                      shape: RoundedRectangleBorder(borderRadius: kSmallBorderRadius),
+                      elevation: 5, // Add some elevation for a raised effect
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: kBlack) // kBlack is now defined
+                        : Text(
+                            'Submit Report',
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // Moved _buildImagePicker inside the _ReportFoundFormScreenState class
   Widget _buildImagePicker() {
     return Center(
-      child: GestureDetector(
-        onTap: _pickImage,
+      child: GestureDetector( // Replaced NeumorphicButton with GestureDetector
+        onTap: _showImageSourceSelection, // Call the new method
         child: Container(
           width: double.infinity,
           height: 200,
           decoration: BoxDecoration(
-            color: kLightGrey,
+            color: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback, kCardColor is now defined
             borderRadius: kDefaultBorderRadius,
-            border: Border.all(color: kGrey, width: 1),
+            boxShadow: const [kNeumorphicShadowDark, kNeumorphicShadowLight], // Apply neumorphic shadows
             image: _selectedImageFile != null
                 ? DecorationImage(
                     image: FileImage(_selectedImageFile!),
@@ -354,11 +414,10 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
     );
   }
 
-  // Renamed _buildTextField to include named parameters for consistency
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String labelText,
-    String? hintText,
+  Widget _buildTextField(
+    TextEditingController controller,
+    String hintText,
+    IconData icon, { // Added icon parameter
     bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
@@ -371,23 +430,23 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
         obscureText: obscureText,
         keyboardType: keyboardType,
         maxLines: maxLines,
-        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback, kPrimaryTextColor is now defined
         decoration: InputDecoration(
-          labelText: labelText, // Changed from hintText to labelText
           hintText: hintText,
+          prefixIcon: Icon(icon, color: kGrey), // Use icon parameter
           filled: true,
-          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback, kCardColor is now defined
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -410,20 +469,21 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
       child: DropdownButtonFormField<String>(
         value: _selectedCategory,
         decoration: InputDecoration(
-          labelText: 'Select Category', // Changed from hintText to labelText
+          hintText: 'Select Category',
+          prefixIcon: Icon(Icons.category, color: kGrey), // Added icon
           filled: true,
-          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback, kCardColor is now defined
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           errorBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
@@ -435,13 +495,16 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
-        dropdownColor: kBackground, // Changed to kBackground
-        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
-        icon: const Icon(Icons.arrow_drop_down, color: kGrey),
+        dropdownColor: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback, kCardColor is now defined
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback, kPrimaryTextColor is now defined
+        icon: Icon(Icons.arrow_drop_down, color: kGrey),
         items: _categories.map((String category) {
           return DropdownMenuItem<String>(
             value: category,
-            child: Text(capitalizeFirstLetter(category), style: GoogleFonts.poppins(color: kPrimaryBlack)), // Ensure text color
+            child: Text(
+              capitalizeFirstLetter(category),
+              style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback, kPrimaryTextColor is now defined
+            ),
           );
         }).toList(),
         onChanged: (String? newValue) {
@@ -465,25 +528,26 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
       child: TextFormField(
         controller: _dateFoundController,
         readOnly: true,
-        style: GoogleFonts.poppins(color: kPrimaryBlack), // Changed to kPrimaryBlack
+        style: GoogleFonts.poppins(color: Theme.of(context).textTheme.bodyMedium?.color ?? kPrimaryTextColor), // Fallback, kPrimaryTextColor is now defined
         decoration: InputDecoration(
-          labelText: 'Date Found', // Changed from hintText to labelText
+          hintText: 'Date Found',
+          prefixIcon: Icon(Icons.calendar_today, color: kGrey), // Added icon
           filled: true,
-          fillColor: kPrimaryWhite, // Changed to kPrimaryWhite
+          fillColor: Theme.of(context).inputDecorationTheme.fillColor ?? kCardColor, // Fallback, kCardColor is now defined
           border: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none, // No border for neumorphic look
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: Color(0xFFCCCCCC)),
+            borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: kSmallBorderRadius,
-            borderSide: const BorderSide(color: kPrimaryBlack, width: 2), // Changed from kDarkRed to kPrimaryBlack
+            borderSide: BorderSide(color: kPrimaryYellow, width: 2), // Accent color on focus
           ),
           suffixIcon: IconButton(
-            icon: const Icon(Icons.calendar_today, color: kGrey),
+            icon: Icon(Icons.calendar_today, color: kGrey),
             onPressed: () async {
               DateTime? pickedDate = await showDatePicker(
                 context: context,
@@ -493,25 +557,29 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
                 builder: (context, child) {
                   return Theme(
                     data: Theme.of(context).copyWith(
-                      colorScheme: const ColorScheme.light(
-                        primary: kPrimaryBlack, // Header background color
-                        onPrimary: kPrimaryWhite, // Header text color
-                        onSurface: kPrimaryBlack, // Body text color
+                      colorScheme: ColorScheme.light( // Ensure date picker theme matches app theme
+                        primary: kPrimaryYellow, // Header background color
+                        onPrimary: kBlack, // Header text color, kBlack is now defined
+                        onSurface: Theme.of(context).textTheme.bodyMedium?.color ?? kBlack, // Body text color, with fallback, kBlack is now defined
                       ),
                       textButtonTheme: TextButtonThemeData(
                         style: TextButton.styleFrom(
-                          foregroundColor: kPrimaryBlack, // Button text color
+                          foregroundColor: kPrimaryYellow, // Button text color
                         ),
                       ),
+                      // For dark mode, you might need to adjust more properties like dialogBackgroundColor
+                      dialogBackgroundColor: Theme.of(context).cardTheme.color ?? kCardColor, // Fallback, kCardColor is now defined
                     ),
                     child: child!,
                   );
                 },
               );
               if (pickedDate != null) {
-                setState(() {
-                  _dateFoundController.text = pickedDate.toLocal().toString().split(' ')[0];
-                });
+                if (mounted) { // Guard against async gap
+                  setState(() {
+                    _dateFoundController.text = pickedDate.toLocal().toString().split(' ')[0];
+                  });
+                }
               }
             },
           ),
