@@ -226,7 +226,12 @@ class _ReportFoundFormScreenState extends State<ReportFoundFormScreen> {
           'Report Success!',
           'Your found item has been reported successfully!',
         );
-        Navigator.pop(context); // Go back to the previous screen (Homepage)
+
+        await Future.delayed(const Duration(seconds: 2));
+        Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil(
+    '/homepage',
+    (Route<dynamic> route) => false,
+  );
       }
     } catch (e) {
       debugPrint('Error submitting found item report: $e');

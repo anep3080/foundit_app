@@ -215,7 +215,13 @@ class _ReportLostFormScreenState extends State<ReportLostFormScreen> {
           'Report Success!',
           'Your lost item has been reported successfully!',
         );
-        Navigator.pop(context); // Go back to previous screen (Homepage)
+
+        await Future.delayed(const Duration(seconds: 2)); // Show modal for 2 seconds
+        Navigator.pushNamedAndRemoveUntil(
+    context,
+    '/homepage', // 👈 Make sure this route is registered in your routes
+    (Route<dynamic> route) => false,
+  );
       }
     } on StorageException catch (e) {
       debugPrint('Supabase Storage Error: ${e.message}');
