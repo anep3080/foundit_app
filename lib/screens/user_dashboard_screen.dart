@@ -5,6 +5,7 @@ import '../services/supabase_service.dart';
 import '../widgets/message_modal.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase types
 
+// Helper function to capitalize the first letter of a string
 String capitalizeFirstLetter(String text) {
   if (text.isEmpty) return '';
   return '${text[0].toUpperCase()}${text.substring(1).toLowerCase()}';
@@ -21,7 +22,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   List<Map<String, dynamic>> _userLostItems = [];
   List<Map<String, dynamic>> _userFoundItems = [];
   bool _isLoading = true;
-  String? _currentUserId;
+  String? _currentUserId; // To store the current user's ID
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -31,7 +32,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
 
   final List<String> _categories = [
     'All', 'Electronics', 'Documents', 'Clothing', 'Keys', 'Bags', 'Jewelry',
-    'Wallets', 'Books', 'Other', 'Accessories' // Added Accessories for consistency
+    'Wallets', 'Books', 'Other', 'Accessories'
   ];
   final List<String> _lostStatuses = [
     'All', 'Not Found', 'Found', 'Claimed', 'Pending Approval', 'Rejected'
@@ -43,20 +44,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _currentUserId = supabaseService.currentUser?.id;
-    debugPrint('UserDashboardScreen - Initial Current User ID: $_currentUserId'); // Debug print
-    if (_currentUserId == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        MessageModal.show(context, MessageType.error, 'Access Denied', 'You must be logged in to view this page.');
-        Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
-      });
-    } else {
-      _selectedCategory = _categories.first; // Initialize with 'All'
-      _selectedLostStatus = _lostStatuses.first; // Initialize with 'All'
-      _selectedFoundStatus = _foundStatuses.first; // Initialize with 'All'
-      _fetchUserReports();
-      _searchController.addListener(_onSearchChanged);
-    }
+    _fetchCurrentUserIdAndReports(); // Combined fetch for user ID and reports
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
@@ -64,6 +53,27 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  // New method to fetch current user ID and then reports
+  Future<void> _fetchCurrentUserIdAndReports() async {
+    final User? currentUser = supabaseService.currentUser;
+    if (currentUser != null) {
+      setState(() {
+        _currentUserId = currentUser.id;
+      });
+      debugPrint('UserDashboardScreen - Initial Current User ID: $_currentUserId');
+      _selectedCategory = _categories.first; // Initialize with 'All'
+      _selectedLostStatus = _lostStatuses.first; // Initialize with 'All'
+      _selectedFoundStatus = _foundStatuses.first; // Initialize with 'All'
+      _fetchUserReports();
+    } else {
+      // If user is not logged in, show error and navigate to auth screen
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        MessageModal.show(context, MessageType.error, 'Access Denied', 'You must be logged in to view this page.');
+        Navigator.of(context).pushNamedAndRemoveUntil('/auth', (route) => false);
+      });
+    }
   }
 
   void _onSearchChanged() {
@@ -74,8 +84,14 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   }
 
   Future<void> _fetchUserReports() async {
+    // Only fetch if _currentUserId is available
+    if (_currentUserId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
     setState(() => _isLoading = true);
-    debugPrint('UserDashboardScreen - Fetching user reports for ID: $_currentUserId'); // Debug print
+    debugPrint('UserDashboardScreen - Fetching user reports for ID: $_currentUserId');
     try {
       // Start building lost items query
       var lostQuery = supabaseService.client
@@ -128,14 +144,18 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
       setState(() {
         _userLostItems = lostResponse;
         _userFoundItems = foundResponse;
-        debugPrint('UserDashboardScreen - Fetched Lost Items: ${_userLostItems.length}'); // Debug print
-        debugPrint('UserDashboardScreen - Fetched Found Items: ${_userFoundItems.length}'); // Debug print
+        debugPrint('UserDashboardScreen - Fetched Lost Items: ${_userLostItems.length}');
+        debugPrint('UserDashboardScreen - Fetched Found Items: ${_userFoundItems.length}');
       });
     } catch (e) {
-      debugPrint('UserDashboardScreen - Error fetching user reports: $e'); // Debug print
-      MessageModal.show(context, MessageType.error, 'Error', 'Failed to load your reports: $e');
+      debugPrint('UserDashboardScreen - Error fetching user reports: $e');
+      if (mounted) {
+        MessageModal.show(context, MessageType.error, 'Error', 'Failed to load your reports: $e');
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -153,13 +173,19 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
             .update({'status': newStatus})
             .eq('id', itemId);
       }
-      MessageModal.show(context, MessageType.success, 'Success', 'Item status updated to $newStatus.');
+      if (mounted) {
+        MessageModal.show(context, MessageType.success, 'Success', 'Item status updated to ${capitalizeFirstLetter(newStatus)}.');
+      }
       _fetchUserReports(); // Refresh the list after update
     } catch (e) {
       debugPrint('Error updating item status: $e');
-      MessageModal.show(context, MessageType.error, 'Error', 'Failed to update item status: $e');
+      if (mounted) {
+        MessageModal.show(context, MessageType.error, 'Error', 'Failed to update item status: $e');
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -198,12 +224,18 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
         } else {
           await supabaseService.client.from('found_items').delete().eq('id', itemId);
         }
-        MessageModal.show(context, MessageType.success, 'Deleted', '$itemType report deleted.');
+        if (mounted) {
+          MessageModal.show(context, MessageType.success, 'Deleted', '$itemType report deleted.');
+        }
         _fetchUserReports();
       } catch (e) {
-        MessageModal.show(context, MessageType.error, 'Error', 'Failed to delete: $e');
+        if (mounted) {
+          MessageModal.show(context, MessageType.error, 'Error', 'Failed to delete: $e');
+        }
       } finally {
-        setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
       }
     }
   }
@@ -211,18 +243,18 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground, // Changed from kPrimaryYellowGreen
+      backgroundColor: kBackground,
       appBar: AppBar(
-        backgroundColor: kBackground, // Changed from kDarkRed
-        title: Text('My Reports', style: GoogleFonts.poppins(color: kPrimaryBlack, fontWeight: FontWeight.bold)), // Changed from kWhite
+        backgroundColor: kBackground,
+        title: Text('My Reports', style: GoogleFonts.poppins(color: kPrimaryBlack, fontWeight: FontWeight.bold)),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: kPrimaryBlack), // Changed from kWhite
+          icon: const Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow)) // Changed from kDarkRed
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryYellow))
           : RefreshIndicator(
               onRefresh: _fetchUserReports,
               child: SingleChildScrollView(
@@ -381,7 +413,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: kPrimaryBlack)), // Changed from kDarkRed
+        Text(title, style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: kPrimaryBlack)),
         const SizedBox(height: kMediumSpacing),
         items.isEmpty
             ? _buildNoItemsMessage(itemType.toLowerCase())
@@ -391,9 +423,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                 itemCount: items.length,
                 itemBuilder: (context, index) {
                   final item = items[index];
-                  // Pass the full item map to _buildReportCard for detailed checks
                   return _buildReportCard(
-                    itemData: item, // Pass the entire item data
+                    itemData: item,
                     itemType: itemType,
                   );
                 },
@@ -419,27 +450,36 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   }
 
   Widget _buildReportCard({
-    required Map<String, dynamic> itemData, // Now accepts the full item data
+    required Map<String, dynamic> itemData,
     required String itemType,
   }) {
     final String id = itemData['id'];
     final String itemName = itemData['item_name'];
-    final String description = itemData['description'];
+    // final String description = itemData['description']; // Not used in card display, but available
     final String? imageUrl = itemData['image_url'];
-    final String status = itemData['status'] ?? (itemType == 'Lost' ? 'not found' : 'unclaimed');
+    final String status = itemData['status'] ?? (itemType == 'Lost' ? 'not_found' : 'unclaimed');
     final String date = itemType == 'Lost' ? itemData['date_lost'] : itemData['date_found'];
     final String location = itemType == 'Lost' ? itemData['lost_location'] : itemData['found_location'];
-    final String reporterId = itemData['reporter_id']; // Assuming 'reporter_id' exists in itemData
+    final String reporterId = itemData['reporter_id'];
 
-    final bool isCurrentUserReporter = _currentUserId == reporterId;
+    final bool isCurrentUserReporter = _currentUserId != null && _currentUserId == reporterId;
 
-    // Determine if the delete button should be shown
-    final bool canDelete = !(itemType == 'Lost' && (status == 'found' || status == 'claimed')) &&
-        !(itemType == 'Found' && status == 'claimed');
+    // Determine visibility of "Mark as Found" button
+    final bool showMarkAsFound = isCurrentUserReporter &&
+        itemType == 'Lost' && // Ensure it's a lost item
+        status.toLowerCase() != 'found' && // Disappears if status is 'found'
+        status.toLowerCase() != 'claimed'; // Disappears if status is 'claimed'
 
-    // Determine if "Mark as Found" or "Mark as Claimed" button should be shown
-    final bool showMarkAsFound = isCurrentUserReporter && itemType == 'Lost' && status == 'not found';
-    final bool showMarkAsClaimed = isCurrentUserReporter && itemType == 'Found' && status == 'unclaimed';
+    // Determine visibility of "Mark as Claimed" button
+    final bool showMarkAsClaimed = isCurrentUserReporter &&
+        itemType == 'Found' && // Ensure it's a found item
+        status.toLowerCase() != 'claimed'; // Disappears if status is 'claimed'
+
+    // Determine visibility of "Delete" button
+    // It should only disappear when the item is explicitly 'found' or 'claimed'
+    final bool canDelete = isCurrentUserReporter &&
+        status.toLowerCase() != 'found' &&
+        status.toLowerCase() != 'claimed';
 
 
     return Card(
@@ -464,7 +504,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                         : null,
                   ),
                   child: imageUrl == null || imageUrl.isEmpty
-                      ? Center(child: Icon(Icons.image_not_supported, size: 40, color: kGrey))
+                      ? const Center(child: Icon(Icons.image_not_supported, size: 40, color: kGrey))
                       : null,
                 ),
                 const SizedBox(width: kMediumSpacing),
@@ -473,8 +513,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('$itemName (${capitalizeFirstLetter(itemType)})',
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: kPrimaryBlack)), // Changed from kDarkRed
-                      Text('Status: ${capitalizeFirstLetter(status)}', style: GoogleFonts.poppins(fontSize: 14, color: kGrey)),
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: kPrimaryBlack)),
+                      Text('Status: ${capitalizeFirstLetter(status.replaceAll('_', ' '))}', style: GoogleFonts.poppins(fontSize: 14, color: kGrey)),
                       Text('Date: $date', style: GoogleFonts.poppins(fontSize: 14, color: kGrey)),
                       Text('Location: $location', style: GoogleFonts.poppins(fontSize: 14, color: kGrey)),
                     ],
@@ -495,7 +535,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                       Navigator.pushNamed(context, '/found_item_view', arguments: id);
                     }
                   },
-                  style: TextButton.styleFrom(foregroundColor: kPrimaryYellow), // Changed from kDarkRed
+                  style: TextButton.styleFrom(foregroundColor: kPrimaryYellow),
                   child: Text('View Details', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
                 ),
                 // Mark as Found Button (for lost items reported by current user)
