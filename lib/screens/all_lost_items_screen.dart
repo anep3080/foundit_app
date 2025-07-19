@@ -5,6 +5,11 @@ import '../ui_constants.dart';
 import '../services/supabase_service.dart';
 import 'dart:async'; // Import for Timer
 
+String capitalizeFirstLetter(String text) {
+  if (text.isEmpty) return '';
+  return '${text[0].toUpperCase()}${text.substring(1).toLowerCase()}';
+}
+
 class AllLostItemsScreen extends StatefulWidget {
   const AllLostItemsScreen({super.key});
 
@@ -79,7 +84,8 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
       }
 
       if (_selectedCategory != 'All' && _selectedCategory != null) {
-        query = query.eq('category', _selectedCategory!.toLowerCase());
+        // FIX: Use capitalizeFirstLetter for category filter
+        query = query.eq('category', capitalizeFirstLetter(_selectedCategory!));
       }
 
       if (_selectedStatus != 'All' && _selectedStatus != null) {

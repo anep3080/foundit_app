@@ -117,7 +117,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
 
       // Apply category filter for lost items
       if (_selectedCategory != 'All' && _selectedCategory != null) {
-        lostQuery = lostQuery.eq('category', _selectedCategory!.toLowerCase());
+        // FIX: Use capitalizeFirstLetter for category filter
+        lostQuery = lostQuery.eq('category', capitalizeFirstLetter(_selectedCategory!));
       }
 
       // Apply status filter for lost items
@@ -141,7 +142,8 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
 
       // Apply category filter for found items
       if (_selectedCategory != 'All' && _selectedCategory != null) {
-        foundQuery = foundQuery.eq('category', _selectedCategory!.toLowerCase());
+        // FIX: Use capitalizeFirstLetter for category filter
+        foundQuery = foundQuery.eq('category', capitalizeFirstLetter(_selectedCategory!));
       }
 
       // Apply status filter for found items
