@@ -2,7 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../ui_constants.dart';
-import '../services/supabase_service.dart';
+import '../services/supabase_service.dart'; // Make sure this path is correct and the file exists
+import 'dart:async'; // Import for Timer
+
+String capitalizeFirstLetter(String text) {
+  if (text.isEmpty) return '';
+  return '${text[0].toUpperCase()}${text.substring(1).toLowerCase()}';
+}
 
 class AllFoundItemsScreen extends StatefulWidget {
   const AllFoundItemsScreen({super.key});
@@ -17,23 +23,23 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  String? _selectedCategory; // New state for category filter
-  String? _selectedStatus; // New state for status filter (specific to found items)
+  String? _selectedCategory;
+  String? _selectedStatus;
 
-  // Define available categories and statuses for found items
+  Timer? _debounce; // For debouncing search input
+  String _lastSearchedText = ''; // To store the last text that triggered a search
+
   final List<String> _categories = [
     'All', 'Electronics', 'Documents', 'Clothing', 'Keys', 'Bags', 'Jewelry',
     'Wallets', 'Books', 'Other'
   ];
-  final List<String> _statuses = [
-    'All', 'Unclaimed', 'Claimed'
-  ];
+  final List<String> _statuses = ['All', 'Unclaimed', 'Claimed'];
 
   @override
   void initState() {
     super.initState();
-    _selectedCategory = _categories.first; // Initialize with 'All'
-    _selectedStatus = _statuses.first; // Initialize with 'All'
+    _selectedCategory = _categories.first;
+    _selectedStatus = _statuses.first;
     _fetchAllFoundItems();
     _searchController.addListener(_onSearchChanged);
   }
@@ -42,14 +48,21 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _debounce?.cancel(); // Cancel any active debounce timer
     super.dispose();
   }
 
   void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (_lastSearchedText != _searchController.text) {
+        setState(() {
+          _searchQuery = _searchController.text;
+          _lastSearchedText = _searchController.text;
+        });
+        _fetchAllFoundItems(); // Re-fetch items with new search query
+      }
     });
-    _fetchAllFoundItems(); // Re-fetch items with new search query
   }
 
   Future<void> _fetchAllFoundItems() async {
@@ -57,33 +70,33 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
       _isLoading = true;
     });
     try {
-      // Start with the base query
-      var query = supabaseService.client
-          .from('found_items')
-          .select('*');
+      final supabaseClient = Supabase.instance.client;
 
-      // Apply filters conditionally
+      var query = supabaseClient
+          .from('found_items')
+          .select();
+
       if (_searchQuery.isNotEmpty) {
         query = query.ilike('item_name', '%$_searchQuery%');
       }
 
       if (_selectedCategory != 'All' && _selectedCategory != null) {
-        query = query.eq('category', _selectedCategory!.toLowerCase());
+        query = query.eq('category', capitalizeFirstLetter(_selectedCategory!));
       }
 
       if (_selectedStatus != 'All' && _selectedStatus != null) {
-        // Supabase status values are typically lowercase with underscores
         query = query.eq('status', _selectedStatus!.toLowerCase().replaceAll(' ', '_'));
       }
 
-      // Finally, apply ordering
-      final response = await query.order('date_found', ascending: false);
+      final List data = await query.order('date_found', ascending: false);
+
+      debugPrint('Fetched ${data.length} items for category: $_selectedCategory status: $_selectedStatus');
 
       setState(() {
-        _foundItems = List<Map<String, dynamic>>.from(response);
+        _foundItems = List<Map<String, dynamic>>.from(data);
       });
     } catch (e) {
-      debugPrint('Error fetching all found items: $e');
+      debugPrint('Error fetching found items: $e');
     } finally {
       setState(() {
         _isLoading = false;
@@ -91,20 +104,19 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackground, // Use new background color
+      backgroundColor: kBackground,
       appBar: AppBar(
-        backgroundColor: kBackground, // Match app bar background
+        backgroundColor: kBackground,
         elevation: 0,
-        title: Text(
-          'All Found Items',
-          style: GoogleFonts.poppins(
-            color: kPrimaryBlack,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: Text('All Found Items',
+            style: GoogleFonts.poppins(
+              color: kPrimaryBlack,
+              fontWeight: FontWeight.bold,
+            )),
         centerTitle: true,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: kPrimaryBlack),
@@ -147,7 +159,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
                                 item['image_url'],
                                 item['item_name'],
                                 item['description'],
-                                item['status'], // Pass status for badge
+                                item['status'],
                               );
                             },
                           ),
@@ -163,10 +175,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
       decoration: BoxDecoration(
         color: kBackground,
         borderRadius: kSmallBorderRadius,
-        boxShadow: [
-          kNeumorphicShadowDark,
-          kNeumorphicShadowLight,
-        ],
+        boxShadow: [kNeumorphicShadowDark, kNeumorphicShadowLight],
       ),
       child: TextField(
         controller: _searchController,
@@ -180,7 +189,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
                   icon: Icon(Icons.clear, color: kGrey),
                   onPressed: () {
                     _searchController.clear();
-                    _fetchAllFoundItems(); // Clear search and re-fetch all items
+                    _onSearchChanged(); // Clear search and re-fetch all items
                   },
                 )
               : null,
@@ -194,6 +203,17 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
+        onChanged: (value) {
+          _onSearchChanged(); // Debounced search on text change
+        },
+        onSubmitted: (value) {
+          if (_debounce?.isActive ?? false) _debounce!.cancel(); // Cancel any pending debounce
+          setState(() {
+            _searchQuery = value;
+            _lastSearchedText = value;
+          });
+          _fetchAllFoundItems(); // Perform search on submit
+        },
       ),
     );
   }
@@ -245,10 +265,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
       decoration: BoxDecoration(
         color: kBackground,
         borderRadius: kSmallBorderRadius,
-        boxShadow: [
-          kNeumorphicShadowDark,
-          kNeumorphicShadowLight,
-        ],
+        boxShadow: [kNeumorphicShadowDark, kNeumorphicShadowLight],
       ),
       child: DropdownButtonFormField<String>(
         value: value,
@@ -292,10 +309,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
         decoration: BoxDecoration(
           color: kBackground,
           borderRadius: kDefaultBorderRadius,
-          boxShadow: [
-            kNeumorphicShadowDark,
-            kNeumorphicShadowLight,
-          ],
+          boxShadow: [kNeumorphicShadowDark, kNeumorphicShadowLight],
         ),
         child: Padding(
           padding: kMediumPadding,
@@ -316,11 +330,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
                       : null,
                 ),
                 child: imageUrl == null || imageUrl.isEmpty
-                    ? Icon(
-                        Icons.search,
-                        color: kGrey,
-                        size: 40,
-                      )
+                    ? Icon(Icons.search, color: kGrey, size: 40)
                     : null,
               ),
               const SizedBox(width: kMediumSpacing),
@@ -346,7 +356,7 @@ class _AllFoundItemsScreenState extends State<AllFoundItemsScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: kExtraSmallSpacing),
-                    _buildStatusBadge(status), // Pass the status for badge
+                    _buildStatusBadge(status),
                   ],
                 ),
               ),

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../ui_constants.dart';
 import '../services/supabase_service.dart';
+import 'dart:async'; // Import for Timer
 
 class AllLostItemsScreen extends StatefulWidget {
   const AllLostItemsScreen({super.key});
@@ -19,6 +20,9 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
 
   String? _selectedCategory; // New state for category filter
   String? _selectedStatus; // New state for status filter (specific to lost items)
+
+  Timer? _debounce; // For debouncing search input
+  String _lastSearchedText = ''; // To store the last text that triggered a search
 
   // Define available categories and statuses for lost items
   final List<String> _categories = [
@@ -42,14 +46,21 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _debounce?.cancel(); // Cancel any active debounce timer
     super.dispose();
   }
 
   void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (_lastSearchedText != _searchController.text) {
+        setState(() {
+          _searchQuery = _searchController.text;
+          _lastSearchedText = _searchController.text;
+        });
+        _fetchAllLostItems(); // Re-fetch items with new search query
+      }
     });
-    _fetchAllLostItems(); // Re-fetch items with new search query
   }
 
   Future<void> _fetchAllLostItems() async {
@@ -180,7 +191,7 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
                   icon: Icon(Icons.clear, color: kGrey),
                   onPressed: () {
                     _searchController.clear();
-                    _fetchAllLostItems(); // Clear search and re-fetch all items
+                    _onSearchChanged(); // Clear search and re-fetch all items
                   },
                 )
               : null,
@@ -194,6 +205,17 @@ class _AllLostItemsScreenState extends State<AllLostItemsScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
+        onChanged: (value) {
+          _onSearchChanged(); // Debounced search on text change
+        },
+        onSubmitted: (value) {
+          if (_debounce?.isActive ?? false) _debounce!.cancel(); // Cancel any pending debounce
+          setState(() {
+            _searchQuery = value;
+            _lastSearchedText = value;
+          });
+          _fetchAllLostItems(); // Perform search on submit
+        },
       ),
     );
   }

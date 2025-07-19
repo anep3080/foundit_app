@@ -4,6 +4,7 @@ import '../ui_constants.dart';
 import '../services/supabase_service.dart';
 import '../widgets/message_modal.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase types
+import 'dart:async'; // Import for Timer
 
 // Helper function to capitalize the first letter of a string
 String capitalizeFirstLetter(String text) {
@@ -30,6 +31,9 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   String? _selectedLostStatus; // Specific for lost items
   String? _selectedFoundStatus; // Specific for found items
 
+  Timer? _debounce; // For debouncing search input
+  String _lastSearchedText = ''; // To store the last text that triggered a search
+
   final List<String> _categories = [
     'All', 'Electronics', 'Documents', 'Clothing', 'Keys', 'Bags', 'Jewelry',
     'Wallets', 'Books', 'Other', 'Accessories'
@@ -52,6 +56,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _debounce?.cancel(); // Cancel any active debounce timer
     super.dispose();
   }
 
@@ -77,10 +82,16 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
   }
 
   void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text;
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (_lastSearchedText != _searchController.text) {
+        setState(() {
+          _searchQuery = _searchController.text;
+          _lastSearchedText = _searchController.text;
+        });
+        _fetchUserReports(); // Re-fetch items with new search query
+      }
     });
-    _fetchUserReports(); // Re-fetch items with new search query
   }
 
   Future<void> _fetchUserReports() async {
@@ -314,8 +325,16 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: kMediumSpacing, vertical: kMediumSpacing),
         ),
+        onChanged: (value) {
+          _onSearchChanged(); // Debounced search on text change
+        },
         onSubmitted: (value) {
-          _onSearchChanged(); // Trigger search on submit
+          if (_debounce?.isActive ?? false) _debounce!.cancel(); // Cancel any pending debounce
+          setState(() {
+            _searchQuery = value;
+            _lastSearchedText = value;
+          });
+          _fetchUserReports(); // Perform search on submit
         },
       ),
     );
