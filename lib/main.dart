@@ -34,8 +34,8 @@ Future<void> main() async {
   // IMPORTANT: Replace with your actual Supabase URL and Anon Key
   // You can find these in your Supabase project settings -> API
   await Supabase.initialize(
-    url: 'https://eplxlegdqzdgorgoaekf.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwbHhsZWdkcXpkZ29yZ29hZWtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3NzA1MDUsImV4cCI6MjA2NzM0NjUwNX0.gP_6gy6A3jiBj-X0WZ0jncZLyA_TrMzXvoBdk3yhpFM', // Replace with your actual Supabase Anon Key
+    url: 'https://ysplqwkpfobkalckeyru.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzcGxxd2twZm9ia2FsY2tleXJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MDEyNTIsImV4cCI6MjA4MDE3NzI1Mn0.1bpxza-7oUQaAFU6jwFvxULeP1WRI8MkKBsmMTCCdY4', // Replace with your actual Supabase Anon Key
   );
 
   runApp(const MyApp());
